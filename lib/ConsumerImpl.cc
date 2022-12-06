@@ -18,6 +18,7 @@
  */
 #include "ConsumerImpl.h"
 
+#include <pulsar/DeadLetterPolicyBuilder.h>
 #include <pulsar/MessageIdBuilder.h>
 
 #include <algorithm>
@@ -112,6 +113,21 @@ ConsumerImpl::ConsumerImpl(const ClientImplPtr client, const std::string& topic,
     // Create msgCrypto
     if (conf.isEncryptionEnabled()) {
         msgCrypto_ = std::make_shared<MessageCrypto>(consumerStr_, false);
+    }
+
+    // Config dlq
+    auto deadLetterPolicy = conf.getDeadLetterPolicy();
+    if (deadLetterPolicy.getMaxRedeliverCount() > 0) {
+        auto deadLetterPolicyBuilder =
+            DeadLetterPolicyBuilder()
+                .maxRedeliverCount(deadLetterPolicy.getMaxRedeliverCount())
+                .initialSubscriptionName(deadLetterPolicy.getInitialSubscriptionName());
+        if (deadLetterPolicy.getDeadLetterTopic().empty()) {
+            deadLetterPolicyBuilder.deadLetterTopic(topic + "-" + subscriptionName + DLQ_GROUP_TOPIC_SUFFIX);
+        } else {
+            deadLetterPolicyBuilder.deadLetterTopic(deadLetterPolicy.getDeadLetterTopic());
+        }
+        deadLetterPolicy_ = deadLetterPolicyBuilder.build();
     }
 
     checkExpiredChunkedTimer_ = executor_->createDeadlineTimer();
@@ -460,6 +476,7 @@ void ConsumerImpl::messageReceived(const ClientConnectionPtr& cnx, const proto::
         return;
     }
 
+    auto redeliveryCount = msg.redelivery_count();
     const bool isMessageUndecryptable =
         metadata.encryption_keys_size() > 0 && !config_.getCryptoKeyReader().get() &&
         config_.getCryptoFailureAction() == ConsumerCryptoFailureAction::CONSUME;
@@ -519,6 +536,10 @@ void ConsumerImpl::messageReceived(const ClientConnectionPtr& cnx, const proto::
             LOG_DEBUG(getName() << " Ignoring message from before the startMessageId: "
                                 << startMessageId.value());
             return;
+        }
+        if (redeliveryCount >= deadLetterPolicy_.getMaxRedeliverCount()) {
+            possibleSendToDeadLetterTopicMessages_.emplace(m.getMessageId(), std::vector<Message>{m});
+            increaseAvailablePermits(cnx);
         }
         executeNotifyCallback(m);
     }
@@ -630,6 +651,7 @@ uint32_t ConsumerImpl::receiveIndividualMessagesFromBatch(const ClientConnection
 
     int skippedMessages = 0;
 
+    std::vector<Message> possibleToDeadLetter;
     for (int i = 0; i < batchSize; i++) {
         // This is a cheap copy since message contains only one shared pointer (impl_)
         Message msg = Commands::deSerializeSingleMessageInBatch(batchedMessage, i, batchSize);
@@ -652,7 +674,15 @@ uint32_t ConsumerImpl::receiveIndividualMessagesFromBatch(const ClientConnection
             }
         }
 
+        if (redeliveryCount >= deadLetterPolicy_.getMaxRedeliverCount()) {
+            possibleToDeadLetter.emplace_back(msg);
+        }
+
         executeNotifyCallback(msg);
+    }
+
+    if (!possibleToDeadLetter.empty()) {
+        possibleSendToDeadLetterTopicMessages_.emplace(batchedMessage.getMessageId(), possibleToDeadLetter);
     }
 
     if (skippedMessages > 0) {
@@ -1188,7 +1218,28 @@ void ConsumerImpl::redeliverUnacknowledgedMessages(const std::set<MessageId>& me
         redeliverUnacknowledgedMessages();
         return;
     }
-    redeliverMessages(messageIds);
+
+    ClientConnectionPtr cnx = getCnx().lock();
+    if (cnx) {
+        if (cnx->getServerProtocolVersion() >= proto::v2) {
+            auto needRedeliverMsgs = std::make_shared<std::set<MessageId>>();
+            auto needCallBack = std::make_shared<std::atomic<int>>(messageIds.size());
+            auto self = get_shared_this_ptr();
+            for (const auto& msgId : messageIds) {
+                processPossibleToDLQ(msgId,
+                                     [self, needRedeliverMsgs, &msgId, needCallBack](bool processSuccess) {
+                                         if (!processSuccess) {
+                                             needRedeliverMsgs->emplace(msgId);
+                                         }
+                                         if (--(*needCallBack) == 0 && !needRedeliverMsgs->empty()) {
+                                             self->redeliverMessages(*needRedeliverMsgs);
+                                         }
+                                     });
+            }
+        }
+    } else {
+        LOG_WARN("Connection not ready for Consumer - " << getConsumerId());
+    }
 }
 
 void ConsumerImpl::redeliverMessages(const std::set<MessageId>& messageIds) {
@@ -1199,7 +1250,7 @@ void ConsumerImpl::redeliverMessages(const std::set<MessageId>& messageIds) {
             LOG_DEBUG("Sending RedeliverUnacknowledgedMessages command for Consumer - " << getConsumerId());
         }
     } else {
-        LOG_DEBUG("Connection not ready for Consumer - " << getConsumerId());
+        LOG_WARN("Connection not ready for Consumer - " << getConsumerId());
     }
 }
 
@@ -1503,6 +1554,97 @@ void ConsumerImpl::cancelTimers() noexcept {
     boost::system::error_code ec;
     batchReceiveTimer_->cancel(ec);
     checkExpiredChunkedTimer_->cancel(ec);
+}
+
+void ConsumerImpl::processPossibleToDLQ(const MessageId& messageId, ProcessDLQCallBack cb) {
+    auto messages = possibleSendToDeadLetterTopicMessages_.find(messageId);
+    if (messages.is_empty()) {
+        cb(false);
+        return;
+    }
+
+    // Initialize deadLetterProducer_
+    if (!deadLetterProducer_) {
+        Lock createLock(createProducerLock_);
+        if (!deadLetterProducer_) {
+            deadLetterProducer_ = std::make_shared<Promise<Result, Producer>>();
+            ProducerConfiguration producerConfiguration;
+            producerConfiguration.setBlockIfQueueFull(false);
+            if (!deadLetterPolicy_.getInitialSubscriptionName().empty()) {
+                producerConfiguration.setInitialSubscriptionName(
+                    deadLetterPolicy_.getInitialSubscriptionName());
+            }
+            ClientImplPtr client = client_.lock();
+            if (client) {
+                client->createProducerAsync(
+                    deadLetterPolicy_.getDeadLetterTopic(), producerConfiguration,
+                    [this](Result res, Producer producer) {
+                        if (res == ResultOk) {
+                            deadLetterProducer_->setValue(producer);
+                        } else {
+                            LOG_ERROR("Dead letter producer create exception with topic: "
+                                      << deadLetterPolicy_.getDeadLetterTopic() << " ex: " << res);
+                            deadLetterProducer_.reset();
+                        }
+                    });
+            } else {
+                LOG_WARN(getName() << "Client is destroyed and cannot create dead letter producer.");
+            }
+        }
+        createLock.unlock();
+    }
+
+    for (const auto& message : messages.value()) {
+        auto self = get_shared_this_ptr();
+        deadLetterProducer_->getFuture().addListener([self, message, cb](Result res, Producer producer) {
+            auto originMessageId = message.getMessageId();
+            std::stringstream originMessageIdStr;
+            originMessageIdStr << originMessageId;
+            MessageBuilder msgBuilder;
+            msgBuilder.setAllocatedContent(const_cast<void*>(message.getData()), message.getLength())
+                .setProperties(message.getProperties())
+                .setProperty(PROPERTY_ORIGIN_MESSAGE_ID, originMessageIdStr.str())
+                .setProperty(SYSTEM_PROPERTY_REAL_TOPIC, message.getTopicName());
+            if (message.hasPartitionKey()) {
+                msgBuilder.setPartitionKey(message.getPartitionKey());
+            }
+            if (message.hasOrderingKey()) {
+                msgBuilder.setOrderingKey(message.getOrderingKey());
+            }
+            producer.sendAsync(msgBuilder.build(), [self, originMessageId, cb](Result res,
+                                                                               const MessageId& messageId) {
+                if (res == ResultOk) {
+                    if (self->state_ != Ready) {
+                        LOG_WARN(
+                            "Send to the DLQ successfully, but consumer is not ready. ignore acknowledge : "
+                            << self->state_);
+                        cb(false);
+                        return;
+                    }
+                    self->acknowledgeAsync(originMessageId, [self, originMessageId, cb](Result result) {
+                        if (result != ResultOk) {
+                            LOG_WARN("{" << self->topic_ << "} {" << self->subscription_ << "} {"
+                                         << self->consumerName_ << "} Failed to acknowledge the message {"
+                                         << originMessageId
+                                         << "} of the original topic but send to the DLQ successfully : "
+                                         << result);
+                            cb(false);
+                        } else {
+                            LOG_DEBUG("Send msg:" << originMessageId
+                                                  << "to DLQ success and acknowledge success.");
+                            cb(true);
+                        }
+                    });
+                } else {
+                    LOG_WARN("{" << self->topic_ << "} {" << self->subscription_ << "} {"
+                                 << self->consumerName_ << "} Failed to send DLQ message to {"
+                                 << self->deadLetterPolicy_.getDeadLetterTopic() << "} for message id "
+                                 << "{" << originMessageId << "} : " << res);
+                    cb(false);
+                }
+            });
+        });
+    }
 }
 
 } /* namespace pulsar */
