@@ -770,10 +770,23 @@ void MultiTopicsConsumerImpl::redeliverUnacknowledgedMessages(const std::set<Mes
         redeliverUnacknowledgedMessages();
         return;
     }
-    LOG_DEBUG("Sending RedeliverUnacknowledgedMessages command for partitioned consumer.");
-    consumers_.forEachValue([&messageIds](const ConsumerImplPtr& consumer) {
-        consumer->redeliverUnacknowledgedMessages(messageIds);
-    });
+
+    LOG_INFO("Sending RedeliverUnacknowledgedMessages command for partitioned consumer.");
+    std::unordered_map<std::string, std::set<MessageId>> topicToMessageId;
+    for (const MessageId& messageId : messageIds) {
+        auto topicName = messageId.getTopicName();
+        LOG_INFO("multi consumer: " << topicName)
+        topicToMessageId[topicName].emplace(messageId);
+    }
+
+    for (const auto& kv : topicToMessageId) {
+        auto optConsumer = consumers_.find(kv.first);
+        if (optConsumer.is_present()) {
+            optConsumer.value()->redeliverUnacknowledgedMessages(kv.second);
+        } else {
+            LOG_ERROR("Message of topic: " << kv.first << " not in consumers");
+        }
+    }
 }
 
 int MultiTopicsConsumerImpl::getNumOfPrefetchedMessages() const { return incomingMessages_.size(); }

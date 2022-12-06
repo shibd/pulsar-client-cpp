@@ -72,6 +72,14 @@ class LookupService {
      */
     virtual Future<Result, NamespaceTopicsPtr> getTopicsOfNamespaceAsync(const NamespaceNamePtr& nsName) = 0;
 
+    /**
+     * returns current SchemaInfo {@link SchemaInfo} for a given topic.
+     *
+     * @param topicName topic-name
+     * @return SchemaInfo
+     */
+    virtual Future<Result, SchemaInfo> getSchema(const TopicNamePtr& topicName) = 0;
+
     virtual ~LookupService() {}
 };
 

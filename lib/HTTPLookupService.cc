@@ -143,6 +143,10 @@ Future<Result, NamespaceTopicsPtr> HTTPLookupService::getTopicsOfNamespaceAsync(
     return promise.getFuture();
 }
 
+Future<Result, SchemaInfo> HTTPLookupService::getSchema(const TopicNamePtr& topicName) {
+    return Promise<Result, SchemaInfo>().getFuture();
+}
+
 static size_t curlWriteCallback(void *contents, size_t size, size_t nmemb, void *responseDataPtr) {
     ((std::string *)responseDataPtr)->append((char *)contents, size * nmemb);
     return size * nmemb;

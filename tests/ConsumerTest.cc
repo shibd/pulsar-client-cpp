@@ -38,6 +38,7 @@
 #include "lib/UnAckedMessageTrackerEnabled.h"
 #include "lib/Utils.h"
 #include "lib/stats/ProducerStatsImpl.h"
+#include "pulsar/DeadLetterPolicyBuilder.h"
 
 static const std::string lookupUrl = "pulsar://localhost:6650";
 static const std::string adminUrl = "http://localhost:8080/";
@@ -956,6 +957,70 @@ TEST_P(ConsumerSeekTest, testSeekForMessageId) {
     consumerInclusive.close();
     consumerExclusive.close();
     producer.close();
+}
+
+// batch(true, falsee) multiConsumer(true, false)
+// trigger: Nack , ackTimueOut, 这两种混搭?
+// isInitSubscribeption
+// auto set dlqTopicName?
+// 堆积多个消息时, 并发处理. 有一部分到达送达dlq, 有一部分没有到达.
+// 断言properties?
+// 其他呢???
+TEST(ConsumerTest, testSendDLQTriggerByNegativeAcknowledge) {
+    Client client(lookupUrl);
+    const std::string topic = "testSendDLQTriggerByNegativeAcknowledge-" + std::to_string(time(nullptr));
+    const std::string subName = "dlq-sub";
+    const std::string dlqTopic = topic + subName + "DLQ";
+
+
+    bool multiConsumer = false;
+    if (multiConsumer) {
+        // call admin api to make it partitioned
+        std::string url = adminUrl + "admin/v2/persistent/public/default/" + topic + "/partitions";
+        int res = makePutRequest(url, "5");
+        LOG_INFO("res = " << res);
+        ASSERT_FALSE(res != 204 && res != 409);
+    }
+
+    auto dlqPolicy = DeadLetterPolicyBuilder()
+                         .maxRedeliverCount(3)
+                         .initialSubscriptionName("init-sub")
+                         .deadLetterTopic(dlqTopic)
+                         .build();
+    ConsumerConfiguration consumerConfig;
+    consumerConfig.setDeadLetterPolicy(dlqPolicy);
+    consumerConfig.setNegativeAckRedeliveryDelayMs(100);
+    consumerConfig.setConsumerType(ConsumerType::ConsumerShared);
+    Consumer consumer;
+    ASSERT_EQ(ResultOk, client.subscribe(topic, subName, consumerConfig, consumer));
+
+    ProducerConfiguration producerConfiguration;
+    producerConfiguration.setBatchingEnabled(false);
+    Producer producer;
+    ASSERT_EQ(ResultOk, client.createProducer(topic, producerConfiguration, producer));
+
+    const int num = 50;
+    Message msg;
+    for (int i = 0; i < num; ++i) {
+        msg = MessageBuilder().setContent(std::to_string(i)).build();
+        ASSERT_EQ(ResultOk, producer.send(msg));
+    }
+
+    // Each message nack 3 times, a total of 15 times
+    for (int i = 0; i < dlqPolicy.getMaxRedeliverCount() * num; ++i) {
+        ASSERT_EQ(ResultOk, consumer.receive(msg));
+        consumer.negativeAcknowledge(msg);
+    }
+
+    Consumer deadLetterQueueConsumer;
+    ASSERT_EQ(ResultOk, client.subscribe(topic, dlqTopic, deadLetterQueueConsumer));
+    for (int i = 0; i < num; i++) {
+        ASSERT_EQ(ResultOk, consumer.receive(msg));
+        ASSERT_EQ(msg.getDataAsString(), std::to_string(i));
+        ASSERT_EQ(msg.getRedeliveryCount(), dlqPolicy.getMaxRedeliverCount());
+    }
+
+    client.close();
 }
 
 INSTANTIATE_TEST_CASE_P(Pulsar, ConsumerSeekTest, ::testing::Values(true, false));

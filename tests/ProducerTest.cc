@@ -112,6 +112,7 @@ TEST(ProducerTest, testIsConnected) {
     const std::string partitionedTopic =
         "testProducerIsConnectedPartitioned-" + std::to_string(time(nullptr));
 
+
     Producer producer;
     ASSERT_FALSE(producer.isConnected());
     // ProducerImpl

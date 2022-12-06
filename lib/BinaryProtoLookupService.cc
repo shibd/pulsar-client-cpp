@@ -155,6 +155,11 @@ Future<Result, NamespaceTopicsPtr> BinaryProtoLookupService::getTopicsOfNamespac
     return promise->getFuture();
 }
 
+
+Future<Result, SchemaInfo> BinaryProtoLookupService::getSchema(const TopicNamePtr& topicName) {
+    return Promise<Result, SchemaInfo>().getFuture();
+}
+
 void BinaryProtoLookupService::sendGetTopicsOfNamespaceRequest(const std::string& nsName, Result result,
                                                                const ClientConnectionWeakPtr& clientCnx,
                                                                NamespaceTopicsPromisePtr promise) {

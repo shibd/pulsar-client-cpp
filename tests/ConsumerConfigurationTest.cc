@@ -26,6 +26,7 @@ DECLARE_LOG_OBJECT()
 
 #include "../lib/Future.h"
 #include "../lib/Utils.h"
+#include "pulsar/DeadLetterPolicyBuilder.h"
 
 using namespace pulsar;
 
@@ -316,4 +317,17 @@ TEST(ConsumerConfigurationTest, testResetAckTimeOut) {
     // should be able to set it back to 0.
     config.setUnAckedMessagesTimeoutMs(0);
     ASSERT_EQ(0, config.getUnAckedMessagesTimeoutMs());
+}
+
+
+TEST(ConsumerConfigurationTest, testDeadLetterPolicy) {
+    ConsumerConfiguration config;
+    auto dlqPolicy = config.getDeadLetterPolicy();
+    ASSERT_TRUE(dlqPolicy.getDeadLetterTopic().empty());
+    ASSERT_EQ(dlqPolicy.getMaxRedeliverCount(), -1);
+    ASSERT_TRUE(dlqPolicy.getInitialSubscriptionName().empty());
+
+    config.setDeadLetterPolicy(DeadLetterPolicyBuilder().maxRedeliverCount(10).build());
+    auto dlqPolicy2 = config.getDeadLetterPolicy();
+    ASSERT_EQ(dlqPolicy2.getMaxRedeliverCount(), 10);
 }

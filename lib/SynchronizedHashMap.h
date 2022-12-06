@@ -37,7 +37,7 @@ class SynchronizedHashMap {
    public:
     using OptValue = Optional<V>;
     using PairVector = std::vector<std::pair<K, V>>;
-    using MapType = std::unordered_map<K, V>;
+    using MapType = std::map<K, V>;
     using Iterator = typename MapType::iterator;
 
     SynchronizedHashMap() = default;

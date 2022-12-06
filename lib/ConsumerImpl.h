@@ -35,6 +35,7 @@
 #include "TestUtil.h"
 #include "TimeUtils.h"
 #include "UnboundedBlockingQueue.h"
+#include "lib/SynchronizedHashMap.h"
 
 namespace pulsar {
 class UnAckedMessageTrackerInterface;
@@ -45,6 +46,7 @@ class MessageCrypto;
 class GetLastMessageIdResponse;
 typedef std::shared_ptr<MessageCrypto> MessageCryptoPtr;
 typedef std::shared_ptr<Backoff> BackoffPtr;
+typedef std::function<void(bool processSuccess)> ProcessDLQCallBack;
 
 class AckGroupingTracker;
 using AckGroupingTrackerPtr = std::shared_ptr<AckGroupingTracker>;
@@ -63,6 +65,10 @@ enum ConsumerTopicType
     NonPartitioned,
     Partitioned
 };
+
+const static std::string SYSTEM_PROPERTY_REAL_TOPIC  = "REAL_TOPIC";
+const static std::string PROPERTY_ORIGIN_MESSAGE_ID  = "ORIGIN_MESSAGE_ID";
+const static std::string DLQ_GROUP_TOPIC_SUFFIX  = "-DLQ";
 
 class ConsumerImpl : public ConsumerImplBase {
    public:
@@ -196,9 +202,16 @@ class ConsumerImpl : public ConsumerImplBase {
     Optional<MessageId> clearReceiveQueue();
     void seekAsyncInternal(long requestId, SharedBuffer seek, const MessageId& seekId, long timestamp,
                            ResultCallback callback);
+    /**
+     * send msg to DLQ, This method is an asynchronous method that does not throw any exceptions.
+     *
+     * @param message
+     */
+    void processPossibleToDLQ(const MessageId& messageId, ProcessDLQCallBack cb);
 
     std::mutex mutexForReceiveWithZeroQueueSize;
     const ConsumerConfiguration config_;
+    DeadLetterPolicy deadLetterPolicy_;
     const std::string subscription_;
     std::string originalSubscriptionName_;
     const bool isPersistent_;
@@ -229,6 +242,10 @@ class ConsumerImpl : public ConsumerImplBase {
 
     MessageCryptoPtr msgCrypto_;
     const bool readCompacted_;
+
+    SynchronizedHashMap<MessageId, std::vector<Message>> possibleSendToDeadLetterTopicMessages_;
+    std::shared_ptr<Promise<Result, Producer>> deadLetterProducer_;
+    std::mutex createProducerLock_;
 
     // Make the access to `lastDequedMessageId_` and `lastMessageIdInBroker_` thread safe
     mutable std::mutex mutexForMessageId_;
@@ -335,6 +352,9 @@ class ConsumerImpl : public ConsumerImplBase {
     FRIEND_TEST(ConsumerTest, testPartitionedConsumerUnAckedMessageRedelivery);
     FRIEND_TEST(ConsumerTest, testMultiTopicsConsumerUnAckedMessageRedelivery);
     FRIEND_TEST(ConsumerTest, testBatchUnAckedMessageTracker);
+    FRIEND_TEST(DeadLetterQueueTest, testAutoSetDLQTopicName);
+    FRIEND_TEST(DeadLetterQueueTest, testSendDLQTriggerByAckTimeOutAndNeAck);
+    FRIEND_TEST(DeadLetterQueueTest, testWithoutConsumerReceiveImmediately);
 };
 
 } /* namespace pulsar */

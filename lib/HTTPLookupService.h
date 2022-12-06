@@ -72,6 +72,8 @@ class HTTPLookupService : public LookupService, public std::enable_shared_from_t
 
     Future<Result, LookupDataResultPtr> getPartitionMetadataAsync(const TopicNamePtr&) override;
 
+    Future<Result, SchemaInfo> getSchema(const TopicNamePtr& topicName) override;
+
     Future<Result, NamespaceTopicsPtr> getTopicsOfNamespaceAsync(const NamespaceNamePtr& nsName) override;
 };
 }  // namespace pulsar
