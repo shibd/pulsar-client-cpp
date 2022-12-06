@@ -34,6 +34,7 @@
 #include <memory>
 
 #include "BatchReceivePolicy.h"
+#include "DeadLetterPolicy.h"
 
 namespace pulsar {
 
@@ -397,6 +398,20 @@ class PULSAR_PUBLIC ConsumerConfiguration {
      * @return batch receive policy
      */
     const BatchReceivePolicy& getBatchReceivePolicy() const;
+
+    /**
+     * Set dead letter policy.
+     *
+     * @param deadLetterPolicy thd default is empty
+     */
+    void setDeadLetterPolicy(const DeadLetterPolicy& deadLetterPolicy);
+
+    /**
+     * Get dead letter policy.
+     *
+     * @return dead letter policy
+     */
+    const DeadLetterPolicy& getDeadLetterPolicy() const;
 
     /**
      * Set whether the subscription status should be replicated.
