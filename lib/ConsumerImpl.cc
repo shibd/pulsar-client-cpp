@@ -1572,7 +1572,7 @@ void ConsumerImpl::cancelTimers() noexcept {
 
 void ConsumerImpl::processPossibleToDLQ(const MessageId& messageId, ProcessDLQCallBack cb) {
     auto messages = possibleSendToDeadLetterTopicMessages_.find(messageId);
-    if (messages.is_empty()) {
+    if (!messages) {
         cb(false);
         return;
     }

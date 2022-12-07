@@ -780,7 +780,7 @@ void MultiTopicsConsumerImpl::redeliverUnacknowledgedMessages(const std::set<Mes
 
     for (const auto& kv : topicToMessageId) {
         auto optConsumer = consumers_.find(kv.first);
-        if (optConsumer.is_present()) {
+        if (optConsumer) {
             optConsumer.value()->redeliverUnacknowledgedMessages(kv.second);
         } else {
             LOG_ERROR("Message of topic: " << kv.first << " not in consumers");
