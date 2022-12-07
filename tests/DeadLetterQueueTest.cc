@@ -46,7 +46,7 @@ TEST(DeadLetterQueueTest, testAutoSchema) {
 
     static const std::string jsonSchema =
         R"({"type":"record","name":"cpx","fields":[{"name":"re","type":"double"},{"name":"im","type":"double"}]})";
-    SchemaInfo schemaInfo(AUTO_PUBLISH, "test-json", jsonSchema);
+    SchemaInfo schemaInfo(JSON, "test-json", jsonSchema);
 
     auto dlqPolicy = DeadLetterPolicyBuilder()
                          .maxRedeliverCount(3)
