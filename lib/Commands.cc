@@ -157,7 +157,6 @@ SharedBuffer Commands::newLookup(const std::string& topic, const bool authoritat
     return buffer;
 }
 
-
 SharedBuffer Commands::newGetSchema(const std::string& topic, uint64_t requestId) {
     static BaseCommand cmd;
     static std::mutex mutex;

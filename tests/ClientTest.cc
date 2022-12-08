@@ -362,4 +362,3 @@ TEST(ClientTest, testGetKeyValueSchema) {
     ASSERT_EQ(SchemaType::KEY_VALUE, schemaInfo->getSchemaType());
     ASSERT_TRUE(!schemaInfo->getProperties().empty());
 }
-

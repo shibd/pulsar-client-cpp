@@ -27,6 +27,7 @@
 #include "ExecutorService.h"
 #include "LogUtils.h"
 #include "NamespaceName.h"
+#include "SchemaUtils.h"
 #include "ServiceNameResolver.h"
 #include "SharedBuffer.h"
 #include "TopicName.h"
@@ -667,28 +668,14 @@ void HTTPLookupService::handleGetSchemaHTTPRequest(GetSchemaPromise promise, con
             }
             std::stringstream keyStream;
             ptree::write_json(keyStream, kvRoot.get_child("key"), false);
+            std::stringstream valueStream;
+            ptree::write_json(valueStream, kvRoot.get_child("value"), false);
             auto keyData = keyStream.str();
+            auto valueData = valueStream.str();
             // Remove the last line break.
             keyData.pop_back();
-            std::stringstream vstream;
-            ptree::write_json(vstream, kvRoot.get_child("value"), false);
-            auto valueData = vstream.str();
-            // Remove the last line break.
             valueData.pop_back();
-
-            LOG_INFO(keyData);
-            LOG_INFO(valueData);
-
-            uint32_t keySize = keyData.size();
-            uint32_t valueSize = valueData.size();
-
-            auto buffSize = sizeof keySize + keySize + sizeof valueSize + valueSize;
-            SharedBuffer buffer = SharedBuffer::allocate(buffSize);
-            buffer.writeUnsignedInt(keySize == 0 ? 0xFFFFFFFF : static_cast<uint32_t>(keySize));
-            buffer.write(keyData.c_str(), static_cast<uint32_t>(keySize));
-            buffer.writeUnsignedInt(valueSize == 0 ? 0xFFFFFFFF : static_cast<uint32_t>(valueSize));
-            buffer.write(valueData.c_str(), static_cast<uint32_t>(valueSize));
-            schemaData = std::string(buffer.data(), buffSize);
+            schemaData = mergeKeyValueSchema(keyData, valueData);
         }
 
         StringMap properties;

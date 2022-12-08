@@ -197,7 +197,6 @@ class PULSAR_PUBLIC SchemaInfo {
    private:
     typedef std::shared_ptr<SchemaInfoImpl> SchemaInfoImplPtr;
     SchemaInfoImplPtr impl_;
-    static constexpr uint32_t INVALID_SIZE = 0xFFFFFFFF;
 };
 
 }  // namespace pulsar

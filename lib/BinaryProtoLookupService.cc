@@ -155,8 +155,8 @@ Future<Result, NamespaceTopicsPtr> BinaryProtoLookupService::getTopicsOfNamespac
     return promise->getFuture();
 }
 
-
-Future<Result, boost::optional<SchemaInfo>> BinaryProtoLookupService::getSchema(const TopicNamePtr& topicName) {
+Future<Result, boost::optional<SchemaInfo>> BinaryProtoLookupService::getSchema(
+    const TopicNamePtr& topicName) {
     return Promise<Result, boost::optional<SchemaInfo>>().getFuture();
 }
 

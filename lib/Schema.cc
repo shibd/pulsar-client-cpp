@@ -25,6 +25,7 @@
 #include <map>
 #include <memory>
 
+#include "SchemaUtils.h"
 #include "SharedBuffer.h"
 using boost::property_tree::ptree;
 using boost::property_tree::read_json;
@@ -39,14 +40,6 @@ PULSAR_PUBLIC std::ostream &operator<<(std::ostream &s, pulsar::KeyValueEncoding
 }
 
 namespace pulsar {
-
-static const std::string KEY_SCHEMA_NAME = "key.schema.name";
-static const std::string KEY_SCHEMA_TYPE = "key.schema.type";
-static const std::string KEY_SCHEMA_PROPS = "key.schema.properties";
-static const std::string VALUE_SCHEMA_NAME = "value.schema.name";
-static const std::string VALUE_SCHEMA_TYPE = "value.schema.type";
-static const std::string VALUE_SCHEMA_PROPS = "value.schema.properties";
-static const std::string KV_ENCODING_TYPE = "kv.encoding.type";
 
 PULSAR_PUBLIC const char *strEncodingType(KeyValueEncodingType encodingType) {
     switch (encodingType) {
@@ -150,7 +143,6 @@ PULSAR_PUBLIC SchemaType enumSchemaType(std::string schemaTypeStr) {
     }
 }
 
-
 class PULSAR_PUBLIC SchemaInfoImpl {
    public:
     const std::string name_;
@@ -173,18 +165,6 @@ SchemaInfo::SchemaInfo(SchemaType schemaType, const std::string &name, const std
 
 SchemaInfo::SchemaInfo(const SchemaInfo &keySchema, const SchemaInfo &valueSchema,
                        const KeyValueEncodingType &keyValueEncodingType) {
-    std::string keySchemaStr = keySchema.getSchema();
-    std::string valueSchemaStr = valueSchema.getSchema();
-    uint32_t keySize = keySchemaStr.size();
-    uint32_t valueSize = valueSchemaStr.size();
-
-    auto buffSize = sizeof keySize + keySize + sizeof valueSize + valueSize;
-    SharedBuffer buffer = SharedBuffer::allocate(buffSize);
-    buffer.writeUnsignedInt(keySize == 0 ? INVALID_SIZE : static_cast<uint32_t>(keySize));
-    buffer.write(keySchemaStr.c_str(), static_cast<uint32_t>(keySize));
-    buffer.writeUnsignedInt(valueSize == 0 ? INVALID_SIZE : static_cast<uint32_t>(valueSize));
-    buffer.write(valueSchemaStr.c_str(), static_cast<uint32_t>(valueSize));
-
     auto writeJson = [](const StringMap &properties) {
         ptree pt;
         for (auto &entry : properties) {
@@ -206,8 +186,10 @@ SchemaInfo::SchemaInfo(const SchemaInfo &keySchema, const SchemaInfo &valueSchem
     properties.emplace(VALUE_SCHEMA_PROPS, writeJson(valueSchema.getProperties()));
     properties.emplace(KV_ENCODING_TYPE, strEncodingType(keyValueEncodingType));
 
-    impl_ = std::make_shared<SchemaInfoImpl>(KEY_VALUE, "KeyValue", std::string(buffer.data(), buffSize),
-                                             properties);
+    std::string keySchemaStr = keySchema.getSchema();
+    std::string valueSchemaStr = valueSchema.getSchema();
+    impl_ = std::make_shared<SchemaInfoImpl>(KEY_VALUE, "KeyValue",
+                                             mergeKeyValueSchema(keySchemaStr, valueSchemaStr), properties);
 }
 
 SchemaType SchemaInfo::getSchemaType() const { return impl_->type_; }
