@@ -20,6 +20,7 @@
 #define _PULSAR_BINARY_LOOKUP_SERVICE_HEADER_
 
 #include <pulsar/Authentication.h>
+#include <pulsar/Schema.h>
 
 #include <mutex>
 
@@ -44,6 +45,8 @@ class PULSAR_PUBLIC BinaryProtoLookupService : public LookupService {
     Future<Result, LookupDataResultPtr> getPartitionMetadataAsync(const TopicNamePtr& topicName) override;
 
     Future<Result, NamespaceTopicsPtr> getTopicsOfNamespaceAsync(const NamespaceNamePtr& nsName) override;
+
+    Future<Result, boost::optional<SchemaInfo>> getSchema(const TopicNamePtr& topicName) override;
 
    private:
     std::mutex mutex_;

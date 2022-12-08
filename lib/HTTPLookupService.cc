@@ -28,6 +28,7 @@
 #include "LogUtils.h"
 #include "NamespaceName.h"
 #include "ServiceNameResolver.h"
+#include "SharedBuffer.h"
 #include "TopicName.h"
 namespace ptree = boost::property_tree;
 
@@ -139,6 +140,26 @@ Future<Result, NamespaceTopicsPtr> HTTPLookupService::getTopicsOfNamespaceAsync(
     }
 
     executorProvider_->get()->postWork(std::bind(&HTTPLookupService::handleNamespaceTopicsHTTPRequest,
+                                                 shared_from_this(), promise, completeUrlStream.str()));
+    return promise.getFuture();
+}
+
+Future<Result, boost::optional<SchemaInfo>> HTTPLookupService::getSchema(const TopicNamePtr &topicName) {
+    Promise<Result, boost::optional<SchemaInfo>> promise;
+    std::stringstream completeUrlStream;
+
+    const auto &url = serviceNameResolver_.resolveHost();
+    if (topicName->isV2Topic()) {
+        completeUrlStream << url << ADMIN_PATH_V2 << "schemas/" << topicName->getProperty() << '/'
+                          << topicName->getNamespacePortion() << '/' << topicName->getEncodedLocalName()
+                          << "/schema";
+    } else {
+        completeUrlStream << url << ADMIN_PATH_V1 << "schemas/" << topicName->getProperty() << '/'
+                          << topicName->getCluster() << '/' << topicName->getNamespacePortion() << '/'
+                          << topicName->getEncodedLocalName() << "/schema";
+    }
+
+    executorProvider_->get()->postWork(std::bind(&HTTPLookupService::handleGetSchemaHTTPRequest,
                                                  shared_from_this(), promise, completeUrlStream.str()));
     return promise.getFuture();
 }
@@ -274,6 +295,8 @@ Result HTTPLookupService::sendHTTPRequest(std::string completeUrl, std::string &
                     LOG_INFO("Response from url " << completeUrl << " to new url " << url);
                     completeUrl = url;
                     retResult = ResultLookupError;
+                } else if (response_code == 404) {
+                    retResult = ResultNotFound;
                 } else {
                     retResult = ResultLookupError;
                 }
@@ -299,6 +322,194 @@ Result HTTPLookupService::sendHTTPRequest(std::string completeUrl, std::string &
             default:
                 LOG_ERROR("Response failed for url " << completeUrl << ". Error Code " << res);
                 retResult = ResultLookupError;
+                break;
+            case CURLE_UNSUPPORTED_PROTOCOL:
+                break;
+            case CURLE_FAILED_INIT:
+                break;
+            case CURLE_URL_MALFORMAT:
+                break;
+            case CURLE_NOT_BUILT_IN:
+                break;
+            case CURLE_WEIRD_SERVER_REPLY:
+                break;
+            case CURLE_REMOTE_ACCESS_DENIED:
+                break;
+            case CURLE_FTP_ACCEPT_FAILED:
+                break;
+            case CURLE_FTP_WEIRD_PASS_REPLY:
+                break;
+            case CURLE_FTP_ACCEPT_TIMEOUT:
+                break;
+            case CURLE_FTP_WEIRD_PASV_REPLY:
+                break;
+            case CURLE_FTP_WEIRD_227_FORMAT:
+                break;
+            case CURLE_FTP_CANT_GET_HOST:
+                break;
+            case CURLE_HTTP2:
+                break;
+            case CURLE_FTP_COULDNT_SET_TYPE:
+                break;
+            case CURLE_PARTIAL_FILE:
+                break;
+            case CURLE_FTP_COULDNT_RETR_FILE:
+                break;
+            case CURLE_OBSOLETE20:
+                break;
+            case CURLE_QUOTE_ERROR:
+                break;
+            case CURLE_WRITE_ERROR:
+                break;
+            case CURLE_OBSOLETE24:
+                break;
+            case CURLE_UPLOAD_FAILED:
+                break;
+            case CURLE_OUT_OF_MEMORY:
+                break;
+            case CURLE_OBSOLETE29:
+                break;
+            case CURLE_FTP_PORT_FAILED:
+                break;
+            case CURLE_FTP_COULDNT_USE_REST:
+                break;
+            case CURLE_OBSOLETE32:
+                break;
+            case CURLE_RANGE_ERROR:
+                break;
+            case CURLE_HTTP_POST_ERROR:
+                break;
+            case CURLE_SSL_CONNECT_ERROR:
+                break;
+            case CURLE_BAD_DOWNLOAD_RESUME:
+                break;
+            case CURLE_FILE_COULDNT_READ_FILE:
+                break;
+            case CURLE_LDAP_CANNOT_BIND:
+                break;
+            case CURLE_LDAP_SEARCH_FAILED:
+                break;
+            case CURLE_OBSOLETE40:
+                break;
+            case CURLE_FUNCTION_NOT_FOUND:
+                break;
+            case CURLE_ABORTED_BY_CALLBACK:
+                break;
+            case CURLE_BAD_FUNCTION_ARGUMENT:
+                break;
+            case CURLE_OBSOLETE44:
+                break;
+            case CURLE_INTERFACE_FAILED:
+                break;
+            case CURLE_OBSOLETE46:
+                break;
+            case CURLE_TOO_MANY_REDIRECTS:
+                break;
+            case CURLE_UNKNOWN_OPTION:
+                break;
+            case CURLE_SETOPT_OPTION_SYNTAX:
+                break;
+            case CURLE_OBSOLETE50:
+                break;
+            case CURLE_OBSOLETE51:
+                break;
+            case CURLE_GOT_NOTHING:
+                break;
+            case CURLE_SSL_ENGINE_NOTFOUND:
+                break;
+            case CURLE_SSL_ENGINE_SETFAILED:
+                break;
+            case CURLE_SEND_ERROR:
+                break;
+            case CURLE_RECV_ERROR:
+                break;
+            case CURLE_OBSOLETE57:
+                break;
+            case CURLE_SSL_CERTPROBLEM:
+                break;
+            case CURLE_SSL_CIPHER:
+                break;
+            case CURLE_PEER_FAILED_VERIFICATION:
+                break;
+            case CURLE_BAD_CONTENT_ENCODING:
+                break;
+            case CURLE_OBSOLETE62:
+                break;
+            case CURLE_FILESIZE_EXCEEDED:
+                break;
+            case CURLE_USE_SSL_FAILED:
+                break;
+            case CURLE_SEND_FAIL_REWIND:
+                break;
+            case CURLE_SSL_ENGINE_INITFAILED:
+                break;
+            case CURLE_LOGIN_DENIED:
+                break;
+            case CURLE_TFTP_NOTFOUND:
+                break;
+            case CURLE_TFTP_PERM:
+                break;
+            case CURLE_REMOTE_DISK_FULL:
+                break;
+            case CURLE_TFTP_ILLEGAL:
+                break;
+            case CURLE_TFTP_UNKNOWNID:
+                break;
+            case CURLE_REMOTE_FILE_EXISTS:
+                break;
+            case CURLE_TFTP_NOSUCHUSER:
+                break;
+            case CURLE_CONV_FAILED:
+                break;
+            case CURLE_OBSOLETE76:
+                break;
+            case CURLE_SSL_CACERT_BADFILE:
+                break;
+            case CURLE_REMOTE_FILE_NOT_FOUND:
+                break;
+            case CURLE_SSH:
+                break;
+            case CURLE_SSL_SHUTDOWN_FAILED:
+                break;
+            case CURLE_AGAIN:
+                break;
+            case CURLE_SSL_CRL_BADFILE:
+                break;
+            case CURLE_SSL_ISSUER_ERROR:
+                break;
+            case CURLE_FTP_PRET_FAILED:
+                break;
+            case CURLE_RTSP_CSEQ_ERROR:
+                break;
+            case CURLE_RTSP_SESSION_ERROR:
+                break;
+            case CURLE_FTP_BAD_FILE_LIST:
+                break;
+            case CURLE_CHUNK_FAILED:
+                break;
+            case CURLE_NO_CONNECTION_AVAILABLE:
+                break;
+            case CURLE_SSL_PINNEDPUBKEYNOTMATCH:
+                break;
+            case CURLE_SSL_INVALIDCERTSTATUS:
+                break;
+            case CURLE_HTTP2_STREAM:
+                break;
+            case CURLE_RECURSIVE_API_CALL:
+                break;
+            case CURLE_AUTH_ERROR:
+                break;
+            case CURLE_HTTP3:
+                break;
+            case CURLE_QUIC_CONNECT_ERROR:
+                break;
+            case CURLE_PROXY:
+                break;
+            case CURLE_SSL_CLIENTCERT:
+                break;
+            case CURLE_UNRECOVERABLE_POLL:
+                break;
+            case CURL_LAST:
                 break;
         }
         curl_easy_cleanup(handle);
@@ -406,6 +617,88 @@ void HTTPLookupService::handleLookupHTTPRequest(LookupPromise promise, const std
     } else {
         promise.setValue((requestType == PartitionMetaData) ? parsePartitionData(responseData)
                                                             : parseLookupData(responseData));
+    }
+}
+
+void HTTPLookupService::handleGetSchemaHTTPRequest(GetSchemaPromise promise, const std::string completeUrl) {
+    std::string responseData;
+    Result result = sendHTTPRequest(completeUrl, responseData);
+
+    if (result == ResultNotFound) {
+        promise.setValue(boost::none);
+    } else if (result != ResultOk) {
+        promise.setFailed(result);
+    } else {
+        // responseData
+        ptree::ptree root;
+        std::stringstream stream(responseData);
+        try {
+            ptree::read_json(stream, root);
+        } catch (ptree::json_parser_error &e) {
+            LOG_ERROR("Failed to parse json of Partition Metadata: " << e.what()
+                                                                     << "\nInput Json = " << responseData);
+            promise.setFailed(ResultInvalidMessage);
+            return;
+        }
+        const std::string defaultNotFoundString = "Not found";
+        auto schemaTypeStr = root.get<std::string>("type", defaultNotFoundString);
+        if (schemaTypeStr == defaultNotFoundString) {
+            LOG_ERROR("malformed json! - type not present" << responseData);
+            promise.setFailed(ResultInvalidMessage);
+            return;
+        }
+        auto schemaData = root.get<std::string>("data", defaultNotFoundString);
+        if (schemaData == defaultNotFoundString) {
+            LOG_ERROR("malformed json! - data not present" << responseData);
+            promise.setFailed(ResultInvalidMessage);
+            return;
+        }
+
+        auto schemaType = enumSchemaType(schemaTypeStr);
+        if (schemaType == KEY_VALUE) {
+            ptree::ptree kvRoot;
+            std::stringstream kvStream(schemaData);
+            try {
+                ptree::read_json(kvStream, kvRoot);
+            } catch (ptree::json_parser_error &e) {
+                LOG_ERROR("Failed to parse json of Partition Metadata: " << e.what()
+                                                                         << "\nInput Json = " << schemaData);
+                return;
+            }
+            std::stringstream keyStream;
+            ptree::write_json(keyStream, kvRoot.get_child("key"), false);
+            auto keyData = keyStream.str();
+            // Remove the last line break.
+            keyData.pop_back();
+            std::stringstream vstream;
+            ptree::write_json(vstream, kvRoot.get_child("value"), false);
+            auto valueData = vstream.str();
+            // Remove the last line break.
+            valueData.pop_back();
+
+            LOG_INFO(keyData);
+            LOG_INFO(valueData);
+
+            uint32_t keySize = keyData.size();
+            uint32_t valueSize = valueData.size();
+
+            auto buffSize = sizeof keySize + keySize + sizeof valueSize + valueSize;
+            SharedBuffer buffer = SharedBuffer::allocate(buffSize);
+            buffer.writeUnsignedInt(keySize == 0 ? 0xFFFFFFFF : static_cast<uint32_t>(keySize));
+            buffer.write(keyData.c_str(), static_cast<uint32_t>(keySize));
+            buffer.writeUnsignedInt(valueSize == 0 ? 0xFFFFFFFF : static_cast<uint32_t>(valueSize));
+            buffer.write(valueData.c_str(), static_cast<uint32_t>(valueSize));
+            schemaData = std::string(buffer.data(), buffSize);
+        }
+
+        StringMap properties;
+        auto propertiesTree = root.get_child("properties");
+        for (const auto &item : propertiesTree) {
+            properties[item.first] = item.second.get_value<std::string>();
+        }
+
+        SchemaInfo schemaInfo = SchemaInfo(schemaType, schemaTypeStr, schemaData, properties);
+        promise.setValue(schemaInfo);
     }
 }
 

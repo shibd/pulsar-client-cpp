@@ -112,6 +112,45 @@ PULSAR_PUBLIC const char *strSchemaType(SchemaType schemaType) {
     return "UnknownSchemaType";
 }
 
+PULSAR_PUBLIC SchemaType enumSchemaType(std::string schemaTypeStr) {
+    if (schemaTypeStr == "NONE") {
+        return NONE;
+    } else if (schemaTypeStr == "STRING") {
+        return STRING;
+    } else if (schemaTypeStr == "INT8") {
+        return INT8;
+    } else if (schemaTypeStr == "INT16") {
+        return INT16;
+    } else if (schemaTypeStr == "INT32") {
+        return INT32;
+    } else if (schemaTypeStr == "INT64") {
+        return INT64;
+    } else if (schemaTypeStr == "FLOAT") {
+        return FLOAT;
+    } else if (schemaTypeStr == "DOUBLE") {
+        return DOUBLE;
+    } else if (schemaTypeStr == "BYTES") {
+        return BYTES;
+    } else if (schemaTypeStr == "JSON") {
+        return JSON;
+    } else if (schemaTypeStr == "PROTOBUF") {
+        return PROTOBUF;
+    } else if (schemaTypeStr == "AVRO") {
+        return AVRO;
+    } else if (schemaTypeStr == "AUTO_CONSUME") {
+        return AUTO_CONSUME;
+    } else if (schemaTypeStr == "AUTO_PUBLISH") {
+        return AUTO_PUBLISH;
+    } else if (schemaTypeStr == "KEY_VALUE") {
+        return KEY_VALUE;
+    } else if (schemaTypeStr == "PROTOBUF_NATIVE") {
+        return PROTOBUF_NATIVE;
+    } else {
+        throw std::invalid_argument("No match schema type: " + schemaTypeStr);
+    }
+}
+
+
 class PULSAR_PUBLIC SchemaInfoImpl {
    public:
     const std::string name_;

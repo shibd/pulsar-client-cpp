@@ -41,6 +41,7 @@ enum Result
     ResultLookupError,   /// Broker lookup failed
     ResultConnectError,  /// Failed to connect to broker
     ResultReadError,     /// Failed to read from socket
+    ResultNotFound,      /// Representative Generalized was not found
 
     ResultAuthenticationError,             /// Authentication failed on broker
     ResultAuthorizationError,              /// Client is not authorized to create producer/consumer

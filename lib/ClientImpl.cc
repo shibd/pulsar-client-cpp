@@ -159,9 +159,29 @@ void ClientImpl::createProducerAsync(const std::string& topic, ProducerConfigura
             return;
         }
     }
-    lookupServicePtr_->getPartitionMetadataAsync(topicName).addListener(
-        std::bind(&ClientImpl::handleCreateProducer, shared_from_this(), std::placeholders::_1,
-                  std::placeholders::_2, topicName, conf, callback));
+
+    if (conf.getSchema().getSchemaType() == AUTO_PUBLISH) {
+        auto self = shared_from_this();
+        lookupServicePtr_->getSchema(topicName).addListener(
+            [self, &topicName, &conf, callback](Result res, boost::optional<SchemaInfo> topicSchema) {
+                if (res != ResultOk) {
+                    callback(res, Producer());
+                }
+                SchemaInfo schemaInfo;
+                if (topicSchema) {
+                    schemaInfo = SchemaInfo(topicSchema->getSchemaType(), topicSchema->getSchema(),
+                                            topicSchema->getSchema());
+                    conf.setSchema(schemaInfo);
+                }
+                self->lookupServicePtr_->getPartitionMetadataAsync(topicName).addListener(
+                    std::bind(&ClientImpl::handleCreateProducer, self, std::placeholders::_1,
+                              std::placeholders::_2, topicName, conf, callback));
+            });
+    } else {
+        lookupServicePtr_->getPartitionMetadataAsync(topicName).addListener(
+            std::bind(&ClientImpl::handleCreateProducer, shared_from_this(), std::placeholders::_1,
+                      std::placeholders::_2, topicName, conf, callback));
+    }
 }
 
 void ClientImpl::handleCreateProducer(const Result result, const LookupDataResultPtr partitionMetadata,

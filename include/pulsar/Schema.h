@@ -134,6 +134,8 @@ enum SchemaType
 // Return string representation of result code
 PULSAR_PUBLIC const char *strSchemaType(SchemaType schemaType);
 
+PULSAR_PUBLIC SchemaType enumSchemaType(std::string schemaTypeStr);
+
 class SchemaInfoImpl;
 
 typedef std::map<std::string, std::string> StringMap;
