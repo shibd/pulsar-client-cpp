@@ -35,11 +35,7 @@ DECLARE_LOG_OBJECT()
 
 namespace pulsar {
 
-// Original issue: https://github.com/apache/pulsar/pull/9970
-// Because isSchemaValidationEnforced config defaults to false.
-// Therefore, in scenarios where AUTO_PUBLISH schemas are not supported now, the unit test can pass.
-// When implementing AUTO_PUBLISH schema, we should set isSchemaValidationEnforced to true to revalidate.
-TEST(DeadLetterQueueTest, testAutoSchema) {
+TEST(DeadLetterQueueTest, testDLQWithSchema) {
     Client client(lookupUrl);
     const std::string topic = "testAutoSchema-" + std::to_string(time(nullptr));
     const std::string subName = "dlq-sub";

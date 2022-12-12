@@ -1583,6 +1583,7 @@ void ConsumerImpl::processPossibleToDLQ(const MessageId& messageId, ProcessDLQCa
         if (!deadLetterProducer_) {
             deadLetterProducer_ = std::make_shared<Promise<Result, Producer>>();
             ProducerConfiguration producerConfiguration;
+            producerConfiguration.setSchema(config_.getSchema());
             producerConfiguration.setBlockIfQueueFull(false);
             if (!deadLetterPolicy_.getInitialSubscriptionName().empty()) {
                 producerConfiguration.setInitialSubscriptionName(
