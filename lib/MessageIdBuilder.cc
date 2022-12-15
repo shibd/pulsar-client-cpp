@@ -42,7 +42,7 @@ MessageIdBuilder MessageIdBuilder::from(const proto::MessageIdData& messageIdDat
 }
 
 MessageId MessageIdBuilder::build() const {
-    assert(impl_->batchIndex_ < 0 || (impl_->batchSize_ > impl_->batchIndex_));
+    assert(impl_->batchIndex_ < 0 || (impl_->batchSize_ >= impl_->batchIndex_));
     return MessageId{impl_};
 }
 

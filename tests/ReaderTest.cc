@@ -39,7 +39,7 @@ static const std::string adminUrl = "http://localhost:8080/";
 TEST(ReaderTest, testSimpleReader) {
     Client client(serviceUrl);
 
-    std::string topicName = "persistent://public/default/test-simple-reader";
+    std::string topicName = "persistent://public/default/test-simple-reader" + std::to_string(time(nullptr));
 
     ReaderConfiguration readerConf;
     Reader reader;
@@ -54,14 +54,22 @@ TEST(ReaderTest, testSimpleReader) {
         ASSERT_EQ(ResultOk, producer.send(msg));
     }
 
-    for (int i = 0; i < 10; i++) {
+    int i = 0;
+    while (true) {
         Message msg;
-        ASSERT_EQ(ResultOk, reader.readNext(msg));
+        bool has = false;
+        reader.hasMessageAvailable(has);
+        if (has) {
+            ASSERT_EQ(ResultOk, reader.readNext(msg));
+        } else {
+            break;
+        }
 
         std::string content = msg.getDataAsString();
-        std::string expected = "my-message-" + std::to_string(i);
+        std::string expected = "my-message-" + std::to_string(i++);
         ASSERT_EQ(expected, content);
     }
+    ASSERT_EQ(i, 10);
 
     producer.close();
     reader.close();
