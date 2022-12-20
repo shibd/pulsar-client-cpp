@@ -18,6 +18,7 @@
  */
 #include <gtest/gtest.h>
 #include <pulsar/Client.h>
+#include <pulsar/DeadLetterPolicyBuilder.h>
 
 #include "HttpHelper.h"
 #include "PulsarFriend.h"
@@ -26,7 +27,6 @@
 #include "lib/MessageIdUtil.h"
 #include "lib/UnAckedMessageTrackerEnabled.h"
 #include "lib/Utils.h"
-#include "pulsar/DeadLetterPolicyBuilder.h"
 
 static const std::string lookupUrl = "pulsar://localhost:6650";
 static const std::string adminUrl = "http://localhost:8080/";
