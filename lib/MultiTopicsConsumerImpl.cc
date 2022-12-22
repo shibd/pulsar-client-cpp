@@ -1034,3 +1034,38 @@ void MultiTopicsConsumerImpl::cancelTimers() noexcept {
         partitionsUpdateTimer_->cancel(ec);
     }
 }
+
+void MultiTopicsConsumerImpl::hasMessageAvailableAsync(HasMessageAvailableCallback callback) {
+    if (incomingMessagesSize_ > 0) {
+        callback(ResultOk, true);
+    }
+
+    std::shared_ptr<std::atomic<bool>> hasMessageAvailable = std::make_shared<std::atomic<bool>>();
+    std::shared_ptr<std::atomic<int>> needCallBack = std::make_shared<std::atomic<int>>(consumers_.size());
+    auto self = get_shared_this_ptr();
+
+    consumers_.forEachValue([self, needCallBack, callback, hasMessageAvailable](ConsumerImplPtr consumer) {
+        consumer->hasMessageAvailableAsync(
+            [self, needCallBack, callback, hasMessageAvailable](Result result, bool hasMsg) {
+                if (result != ResultOk) {
+                    LOG_ERROR("Filed when acknowledge list: " << result);
+                    // set needCallBack is -1 to avoid repeated callback.
+                    needCallBack->store(-1);
+                    callback(result, false);
+                    return;
+                }
+
+                if (hasMsg) {
+                    hasMessageAvailable->exchange(hasMsg);
+                }
+
+                if (--(*needCallBack) == 0) {
+                    callback(result, hasMessageAvailable->load() || self->incomingMessagesSize_ > 0);
+                }
+            });
+    });
+}
+
+void MultiTopicsConsumerImpl::setStartMessageId(boost::optional<MessageId> startMessageId) {
+    startMessageId_ = startMessageId;
+}

@@ -449,6 +449,7 @@ class PULSAR_PUBLIC Consumer {
     friend class PulsarWrapper;
     friend class MultiTopicsConsumerImpl;
     friend class ConsumerImpl;
+    friend class ReaderImpl;
     friend class ClientImpl;
     friend class ConsumerTest;
 };

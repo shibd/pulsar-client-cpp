@@ -36,11 +36,11 @@ ConsumerConfiguration consumerConfigOfReader;
 static ResultCallback emptyCallback;
 
 ReaderImpl::ReaderImpl(const ClientImplPtr client, const std::string& topic, const ReaderConfiguration& conf,
-                       const ExecutorServicePtr listenerExecutor, ReaderCallback readerCreatedCallback)
-    : topic_(topic), client_(client), readerConf_(conf), readerCreatedCallback_(readerCreatedCallback) {}
+                       const ExecutorServicePtr listenerExecutor)
+    : topic_(topic), client_(client), readerConf_(conf) {}
 
-void ReaderImpl::start(const MessageId& startMessageId,
-                       std::function<void(const ConsumerImplBaseWeakPtr&)> callback) {
+Future<Result, Reader> ReaderImpl::start(const MessageId& startMessageId) {
+    Promise<Result, Reader> promise;
     ConsumerConfiguration consumerConf;
     consumerConf.setConsumerType(ConsumerExclusive);
     consumerConf.setReceiverQueueSize(readerConf_.getReceiverQueueSize());
@@ -80,21 +80,20 @@ void ReaderImpl::start(const MessageId& startMessageId,
         test::consumerConfigOfReader = consumerConf.clone();
     }
 
-    consumer_ = std::make_shared<ConsumerImpl>(
-        client_.lock(), topic_, subscription, consumerConf, TopicName::get(topic_)->isPersistent(),
-        ExecutorServicePtr(), false, NonPartitioned, Commands::SubscriptionModeNonDurable, startMessageId);
-    consumer_->setPartitionIndex(TopicName::getPartitionIndex(topic_));
+    auto client = client_.lock();
     auto self = shared_from_this();
-    consumer_->getConsumerCreatedFuture().addListener(
-        [this, self, callback](Result result, const ConsumerImplBaseWeakPtr& weakConsumerPtr) {
+    client->subscribeAsync(
+        topic_, subscription, consumerConf,
+        [self, promise](Result result, Consumer consumer) {
             if (result == ResultOk) {
-                callback(weakConsumerPtr);
-                readerCreatedCallback_(result, Reader(self));
+                self->consumer_ = consumer.impl_;
+                promise.setValue(Reader{self});
             } else {
-                readerCreatedCallback_(result, {});
+                promise.setFailed(result);
             }
-        });
-    consumer_->start();
+        },
+        startMessageId);
+    return promise.getFuture();
 }
 
 const std::string& ReaderImpl::getTopic() const { return consumer_->getTopic(); }

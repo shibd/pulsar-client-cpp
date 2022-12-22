@@ -72,7 +72,8 @@ class ClientImpl : public std::enable_shared_from_this<ClientImpl> {
                              CreateProducerCallback callback);
 
     void subscribeAsync(const std::string& topic, const std::string& subscriptionName,
-                        const ConsumerConfiguration& conf, SubscribeCallback callback);
+                        const ConsumerConfiguration& conf, SubscribeCallback callback,
+                        boost::optional<MessageId> startMessageId = boost::none);
 
     void subscribeAsync(const std::vector<std::string>& topics, const std::string& subscriptionName,
                         const ConsumerConfiguration& conf, SubscribeCallback callback);
@@ -120,11 +121,7 @@ class ClientImpl : public std::enable_shared_from_this<ClientImpl> {
 
     void handleSubscribe(const Result result, const LookupDataResultPtr partitionMetadata,
                          TopicNamePtr topicName, const std::string& consumerName, ConsumerConfiguration conf,
-                         SubscribeCallback callback);
-
-    void handleReaderMetadataLookup(const Result result, const LookupDataResultPtr partitionMetadata,
-                                    TopicNamePtr topicName, MessageId startMessageId,
-                                    ReaderConfiguration conf, ReaderCallback callback);
+                         SubscribeCallback callback, boost::optional<MessageId> startMessageId = boost::none);
 
     void handleGetPartitions(const Result result, const LookupDataResultPtr partitionMetadata,
                              TopicNamePtr topicName, GetPartitionsCallback callback);

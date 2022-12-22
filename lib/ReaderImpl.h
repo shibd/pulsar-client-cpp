@@ -59,9 +59,9 @@ extern PULSAR_PUBLIC ConsumerConfiguration consumerConfigOfReader;
 class PULSAR_PUBLIC ReaderImpl : public std::enable_shared_from_this<ReaderImpl> {
    public:
     ReaderImpl(const ClientImplPtr client, const std::string& topic, const ReaderConfiguration& conf,
-               const ExecutorServicePtr listenerExecutor, ReaderCallback readerCreatedCallback);
+               const ExecutorServicePtr listenerExecutor);
 
-    void start(const MessageId& startMessageId, std::function<void(const ConsumerImplBaseWeakPtr&)> callback);
+    Future<Result, Reader> start(const MessageId& startMessageId);
 
     const std::string& getTopic() const;
 
@@ -69,10 +69,6 @@ class PULSAR_PUBLIC ReaderImpl : public std::enable_shared_from_this<ReaderImpl>
     Result readNext(Message& msg, int timeoutMs);
 
     void closeAsync(ResultCallback callback);
-
-    Future<Result, ReaderImplWeakPtr> getReaderCreatedFuture();
-
-    ConsumerImplWeakPtr getConsumer() const noexcept { return consumer_; }
 
     void hasMessageAvailableAsync(HasMessageAvailableCallback callback);
 
@@ -83,6 +79,8 @@ class PULSAR_PUBLIC ReaderImpl : public std::enable_shared_from_this<ReaderImpl>
 
     bool isConnected() const;
 
+    ConsumerImplBaseWeakPtr getConsumer() const noexcept { return consumer_; }
+
    private:
     void messageListener(Consumer consumer, const Message& msg);
 
@@ -91,8 +89,7 @@ class PULSAR_PUBLIC ReaderImpl : public std::enable_shared_from_this<ReaderImpl>
     std::string topic_;
     ClientImplWeakPtr client_;
     ReaderConfiguration readerConf_;
-    ConsumerImplPtr consumer_;
-    ReaderCallback readerCreatedCallback_;
+    ConsumerImplBasePtr consumer_;
     ReaderListener readerListener_;
 };
 }  // namespace pulsar

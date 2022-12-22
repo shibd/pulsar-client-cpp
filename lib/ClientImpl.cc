@@ -220,44 +220,14 @@ void ClientImpl::createReaderAsync(const std::string& topic, const MessageId& st
         }
     }
 
-    MessageId msgId(startMessageId);
-    lookupServicePtr_->getPartitionMetadataAsync(topicName).addListener(
-        std::bind(&ClientImpl::handleReaderMetadataLookup, shared_from_this(), std::placeholders::_1,
-                  std::placeholders::_2, topicName, msgId, conf, callback));
-}
-
-void ClientImpl::handleReaderMetadataLookup(const Result result, const LookupDataResultPtr partitionMetadata,
-                                            TopicNamePtr topicName, MessageId startMessageId,
-                                            ReaderConfiguration conf, ReaderCallback callback) {
-    if (result != ResultOk) {
-        LOG_ERROR("Error Checking/Getting Partition Metadata while creating readeron "
-                  << topicName->toString() << " -- " << result);
-        callback(result, Reader());
-        return;
-    }
-
-    if (partitionMetadata->getPartitions() > 0) {
-        LOG_ERROR("Topic reader cannot be created on a partitioned topic: " << topicName->toString());
-        callback(ResultOperationNotSupported, Reader());
-        return;
-    }
-
-    ReaderImplPtr reader = std::make_shared<ReaderImpl>(shared_from_this(), topicName->toString(), conf,
-                                                        getListenerExecutorProvider()->get(), callback);
-    ConsumerImplBasePtr consumer = reader->getConsumer().lock();
+    ReaderImplPtr readerImplPtr = std::make_shared<ReaderImpl>(shared_from_this(), topicName->toString(),
+                                                               conf, getListenerExecutorProvider()->get());
     auto self = shared_from_this();
-    reader->start(startMessageId, [this, self](const ConsumerImplBaseWeakPtr& weakConsumerPtr) {
-        auto consumer = weakConsumerPtr.lock();
-        if (consumer) {
-            auto pair = consumers_.emplace(consumer.get(), consumer);
-            if (!pair.second) {
-                auto existingConsumer = pair.first->second.lock();
-                LOG_ERROR("Unexpected existing consumer at the same address: "
-                          << pair.first->first
-                          << ", consumer: " << (existingConsumer ? existingConsumer->getName() : "(null)"));
-            }
+    readerImplPtr->start(startMessageId).addListener([self, callback](Result result, Reader reader) {
+        if (result == ResultOk) {
+            callback(result, reader);
         } else {
-            LOG_ERROR("Unexpected case: the consumer is somehow expired");
+            callback(result, {});
         }
     });
 }
@@ -348,7 +318,8 @@ void ClientImpl::subscribeAsync(const std::vector<std::string>& topics, const st
 }
 
 void ClientImpl::subscribeAsync(const std::string& topic, const std::string& subscriptionName,
-                                const ConsumerConfiguration& conf, SubscribeCallback callback) {
+                                const ConsumerConfiguration& conf, SubscribeCallback callback,
+                                boost::optional<MessageId> startMessageId) {
     TopicNamePtr topicName;
     {
         Lock lock(mutex_);
@@ -371,12 +342,13 @@ void ClientImpl::subscribeAsync(const std::string& topic, const std::string& sub
 
     lookupServicePtr_->getPartitionMetadataAsync(topicName).addListener(
         std::bind(&ClientImpl::handleSubscribe, shared_from_this(), std::placeholders::_1,
-                  std::placeholders::_2, topicName, subscriptionName, conf, callback));
+                  std::placeholders::_2, topicName, subscriptionName, conf, callback, startMessageId));
 }
 
 void ClientImpl::handleSubscribe(const Result result, const LookupDataResultPtr partitionMetadata,
                                  TopicNamePtr topicName, const std::string& subscriptionName,
-                                 ConsumerConfiguration conf, SubscribeCallback callback) {
+                                 ConsumerConfiguration conf, SubscribeCallback callback,
+                                 boost::optional<MessageId> startMessageId) {
     if (result == ResultOk) {
         // generate random name if not supplied by the customer.
         if (conf.getConsumerName().empty()) {
@@ -389,12 +361,16 @@ void ClientImpl::handleSubscribe(const Result result, const LookupDataResultPtr 
                 callback(ResultInvalidConfiguration, Consumer());
                 return;
             }
-            consumer = std::make_shared<MultiTopicsConsumerImpl>(shared_from_this(), topicName,
-                                                                 partitionMetadata->getPartitions(),
-                                                                 subscriptionName, conf, lookupServicePtr_);
+            auto consumerImpl = std::make_shared<MultiTopicsConsumerImpl>(
+                shared_from_this(), topicName, partitionMetadata->getPartitions(), subscriptionName, conf,
+                lookupServicePtr_);
+            consumerImpl->setStartMessageId(startMessageId);
+            consumer = consumerImpl;
         } else {
             auto consumerImpl = std::make_shared<ConsumerImpl>(
-                shared_from_this(), topicName->toString(), subscriptionName, conf, topicName->isPersistent());
+                shared_from_this(), topicName->toString(), subscriptionName, conf, topicName->isPersistent(),
+                ExecutorServicePtr(), false, NonPartitioned, Commands::SubscriptionModeDurable,
+                startMessageId);
             consumerImpl->setPartitionIndex(topicName->getPartitionIndex());
             consumer = consumerImpl;
         }
