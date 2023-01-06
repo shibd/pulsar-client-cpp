@@ -48,7 +48,7 @@ class PULSAR_PUBLIC DeadLetterPolicyBuilder {
     /**
      * Set dead letter topic.
      *
-     * @param deadLetterTopic Name of the dead topic where the failing messages will be sent.
+     * @param deadLetterTopic Name of the dead topic where the failing messages are sent.
      * The default value is: sourceTopicName + "-" + subscriptionName + "-DLQ"
      *
      * @return
@@ -58,7 +58,7 @@ class PULSAR_PUBLIC DeadLetterPolicyBuilder {
     /**
      * Set max redeliver count
      *
-     * @param maxRedeliverCount Maximum number of times that a message will be redelivered before being sent
+     * @param maxRedeliverCount Maximum number of times that a message is redelivered before being sent
      * to the dead letter queue.
      * - The maxRedeliverCount must be greater than 0.
      * - The default value is {INT_MAX} (DLQ is not enabled)
@@ -71,9 +71,9 @@ class PULSAR_PUBLIC DeadLetterPolicyBuilder {
      * Set initial subscription name
      *
      * @param initialSubscriptionName  Name of the initial subscription name of the dead letter topic.
-     * If this field is not set, the initial subscription for the dead letter topic will not be created.
+     * If this field is not set, the initial subscription for the dead letter topic is not created.
      * If this field is set but the broker's `allowAutoSubscriptionCreation` is disabled, the DLQ producer
-     * will fail to be created.
+     * fails to be created.
      *
      * @return
      */

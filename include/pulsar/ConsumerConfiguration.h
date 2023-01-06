@@ -402,13 +402,13 @@ class PULSAR_PUBLIC ConsumerConfiguration {
     /**
      * Set dead letter policy for consumer
      *
-     * By default some message will redelivery so many times possible, even to the extent that it can be never
-     * stop. By using dead letter mechanism messages will has the max redelivery count, when message exceeding
-     * the maximum number of redeliveries, message will send to the Dead Letter Topic and acknowledged
-     * automatic.
+     * By default, some messages are redelivered many times, even to the extent that they can never be
+     * stopped. By using the dead letter mechanism, messages have the max redelivery count, when they exceeding
+     * the maximum number of redeliveries. Messages are sent to dead letter topics and acknowledged
+     * automatically.
      *
-     * You can enable the dead letter mechanism by setting dead letter policy.
-     * example:
+     * You can enable the dead letter mechanism by setting the dead letter policy.
+     * Example:
      *
      * <pre>
      * * DeadLetterPolicy dlqPolicy = DeadLetterPolicyBuilder()
@@ -416,7 +416,7 @@ class PULSAR_PUBLIC ConsumerConfiguration {
      *                       .build();
      * </pre>
      * Default dead letter topic name is {TopicName}-{Subscription}-DLQ.
-     * To setting a custom dead letter topic name
+     * To set a custom dead letter topic name
      * <pre>
      * DeadLetterPolicy dlqPolicy = DeadLetterPolicyBuilder()
      *                       .deadLetterTopic("dlq-topic")
@@ -424,7 +424,7 @@ class PULSAR_PUBLIC ConsumerConfiguration {
      *                       .initialSubscriptionName("init-sub-name")
      *                       .build();
      * </pre>
-     * @param deadLetterPolicy thd default is empty
+     * @param deadLetterPolicy Default value is empty
      */
     void setDeadLetterPolicy(const DeadLetterPolicy& deadLetterPolicy);
 
