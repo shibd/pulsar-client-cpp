@@ -532,23 +532,15 @@ class PULSAR_PUBLIC ProducerConfiguration {
      */
     ProducerAccessMode getAccessMode() const;
 
-    /**
-     * Use this configuration to automatically create an initial subscription when creating a topic.
-     *
-     * If this field is not set, the initial subscription is not created.
-     */
-    ProducerConfiguration& setInitialSubscriptionName(const std::string& initialSubscriptionName);
+   private:
+    typedef std::shared_ptr<ProducerConfigurationImpl> ProducerConfigurationImplPtr;
+    ProducerConfigurationImplPtr impl_;
 
-    /**
-     * Get initial subscription name.
-     */
-    const std::string& getInitialSubscriptionName() const;
+    ProducerConfiguration(ProducerConfigurationImplPtr& impl);
 
     friend class PulsarWrapper;
-
-   private:
-    struct Impl;
-    std::shared_ptr<ProducerConfigurationImpl> impl_;
+    friend class ConsumerImpl;
+    friend class ProducerImpl;
 };
 }  // namespace pulsar
 #endif /* PULSAR_PRODUCERCONFIGURATION_H_ */

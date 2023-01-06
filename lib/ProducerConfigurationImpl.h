@@ -51,6 +51,19 @@ struct ProducerConfigurationImpl {
     bool chunkingEnabled{false};
     ProducerConfiguration::ProducerAccessMode accessMode{ProducerConfiguration::Shared};
     std::string initialSubscriptionName;
+
+    /**
+     * Use this config to automatically create an initial subscription when creating the topic.
+     * If this field is not set, the initial subscription will not be created.
+     * This method is limited to internal use
+     *
+     * @param initialSubscriptionName Name of the initial subscription of the topic.
+     */
+    void setInitialSubscriptionName(const std::string& initialSubscriptionNameParam) {
+        initialSubscriptionName = initialSubscriptionNameParam;
+    }
+
+    const std::string& getInitialSubscriptionName() const { return initialSubscriptionName; }
 };
 }  // namespace pulsar
 

@@ -34,6 +34,7 @@
 #include "MessageCrypto.h"
 #include "MessageImpl.h"
 #include "OpSendMsg.h"
+#include "ProducerConfigurationImpl.h"
 #include "PulsarApi.pb.h"
 #include "TimeUtils.h"
 #include "TopicName.h"
@@ -152,7 +153,7 @@ void ProducerImpl::connectionOpened(const ClientConnectionPtr& cnx) {
                                              conf_.getProperties(), conf_.getSchema(), epoch_,
                                              userProvidedProducerName_, conf_.isEncryptionEnabled(),
                                              static_cast<proto::ProducerAccessMode>(conf_.getAccessMode()),
-                                             topicEpoch, conf_.getInitialSubscriptionName());
+                                             topicEpoch, conf_.impl_->getInitialSubscriptionName());
     cnx->sendRequestWithId(cmd, requestId)
         .addListener(std::bind(&ProducerImpl::handleCreateProducer, shared_from_this(), cnx,
                                std::placeholders::_1, std::placeholders::_2));

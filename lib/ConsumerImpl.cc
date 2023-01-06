@@ -39,6 +39,7 @@
 #include "MessageIdUtil.h"
 #include "MessageImpl.h"
 #include "MessagesImpl.h"
+#include "ProducerConfigurationImpl.h"
 #include "PulsarApi.pb.h"
 #include "TimeUtils.h"
 #include "TopicName.h"
@@ -257,6 +258,7 @@ void ConsumerImpl::handleCreateConsumer(const ClientConnectionPtr& cnx, Result r
             Lock lock(mutex_);
             setCnx(cnx);
             incomingMessages_.clear();
+            possibleSendToDeadLetterTopicMessages_.clear();
             state_ = Ready;
             backoff_.reset();
             // Complicated logic since we don't have a isLocked() function for mutex
@@ -546,7 +548,11 @@ void ConsumerImpl::messageReceived(const ClientConnectionPtr& cnx, const proto::
         }
         if (redeliveryCount >= deadLetterPolicy_.getMaxRedeliverCount()) {
             possibleSendToDeadLetterTopicMessages_.emplace(m.getMessageId(), std::vector<Message>{m});
-            increaseAvailablePermits(cnx);
+            if (redeliveryCount > deadLetterPolicy_.getMaxRedeliverCount()) {
+                redeliverUnacknowledgedMessages({m.getMessageId()});
+                increaseAvailablePermits(cnx);
+                return;
+            }
         }
         executeNotifyCallback(m);
     }
@@ -666,6 +672,14 @@ uint32_t ConsumerImpl::receiveIndividualMessagesFromBatch(const ClientConnection
         msg.impl_->setTopicName(batchedMessage.getTopicName());
         msg.impl_->convertPayloadToKeyValue(config_.getSchema());
 
+        if (redeliveryCount >= deadLetterPolicy_.getMaxRedeliverCount()) {
+            possibleToDeadLetter.emplace_back(msg);
+            if (redeliveryCount > deadLetterPolicy_.getMaxRedeliverCount()) {
+                skippedMessages++;
+                continue;
+            }
+        }
+
         if (startMessageId) {
             const MessageId& msgId = msg.getMessageId();
 
@@ -681,15 +695,14 @@ uint32_t ConsumerImpl::receiveIndividualMessagesFromBatch(const ClientConnection
             }
         }
 
-        if (redeliveryCount >= deadLetterPolicy_.getMaxRedeliverCount()) {
-            possibleToDeadLetter.emplace_back(msg);
-        }
-
         executeNotifyCallback(msg);
     }
 
     if (!possibleToDeadLetter.empty()) {
         possibleSendToDeadLetterTopicMessages_.emplace(batchedMessage.getMessageId(), possibleToDeadLetter);
+        if (redeliveryCount > deadLetterPolicy_.getMaxRedeliverCount()) {
+            redeliverUnacknowledgedMessages({batchedMessage.getMessageId()});
+        }
     }
 
     if (skippedMessages > 0) {
@@ -1095,6 +1108,7 @@ std::pair<MessageId, bool> ConsumerImpl::prepareIndividualAck(const MessageId& m
         consumerStatsBasePtr_->messageAcknowledged(ResultOk, CommandAck_AckType_Individual,
                                                    (batchSize > 0) ? batchSize : 1);
         unAckedMessageTrackerPtr_->remove(messageId);
+        possibleSendToDeadLetterTopicMessages_.remove(messageId);
         return std::make_pair(discardBatch(messageId), true);
     } else {
         return std::make_pair(MessageId{}, false);
@@ -1180,6 +1194,7 @@ const std::string& ConsumerImpl::getName() const { return consumerStr_; }
 
 void ConsumerImpl::shutdown() {
     incomingMessages_.clear();
+    possibleSendToDeadLetterTopicMessages_.clear();
     resetCnx();
     auto client = client_.lock();
     if (client) {
@@ -1246,6 +1261,7 @@ void ConsumerImpl::redeliverUnacknowledgedMessages(const std::set<MessageId>& me
             auto needRedeliverMsgs = std::make_shared<std::set<MessageId>>();
             auto needCallBack = std::make_shared<std::atomic<int>>(messageIds.size());
             auto self = get_shared_this_ptr();
+            // TODO Support MAX_REDELIVER_UNACKNOWLEDGED Avoid redelivering too many messages
             for (const auto& msgId : messageIds) {
                 processPossibleToDLQ(msgId,
                                      [self, needRedeliverMsgs, &msgId, needCallBack](bool processSuccess) {
@@ -1586,39 +1602,42 @@ void ConsumerImpl::processPossibleToDLQ(const MessageId& messageId, ProcessDLQCa
 
     // Initialize deadLetterProducer_
     if (!deadLetterProducer_) {
-        Lock createLock(createProducerLock_);
+        std::lock_guard<std::mutex> createLock(createProducerLock_);
         if (!deadLetterProducer_) {
             deadLetterProducer_ = std::make_shared<Promise<Result, Producer>>();
             ProducerConfiguration producerConfiguration;
             producerConfiguration.setSchema(config_.getSchema());
             producerConfiguration.setBlockIfQueueFull(false);
-            if (!deadLetterPolicy_.getInitialSubscriptionName().empty()) {
-                producerConfiguration.setInitialSubscriptionName(
-                    deadLetterPolicy_.getInitialSubscriptionName());
-            }
+            producerConfiguration.impl_->setInitialSubscriptionName(
+                deadLetterPolicy_.getInitialSubscriptionName());
             ClientImplPtr client = client_.lock();
             if (client) {
+                auto self = get_shared_this_ptr();
                 client->createProducerAsync(
                     deadLetterPolicy_.getDeadLetterTopic(), producerConfiguration,
-                    [this](Result res, Producer producer) {
+                    [self](Result res, Producer producer) {
                         if (res == ResultOk) {
-                            deadLetterProducer_->setValue(producer);
+                            self->deadLetterProducer_->setValue(producer);
                         } else {
                             LOG_ERROR("Dead letter producer create exception with topic: "
-                                      << deadLetterPolicy_.getDeadLetterTopic() << " ex: " << res);
-                            deadLetterProducer_.reset();
+                                      << self->deadLetterPolicy_.getDeadLetterTopic() << " ex: " << res);
+                            self->deadLetterProducer_.reset();
                         }
                     });
             } else {
                 LOG_WARN(getName() << "Client is destroyed and cannot create dead letter producer.");
             }
         }
-        createLock.unlock();
     }
 
     for (const auto& message : messages.value()) {
-        auto self = get_shared_this_ptr();
-        deadLetterProducer_->getFuture().addListener([self, message, cb](Result res, Producer producer) {
+        std::weak_ptr<ConsumerImpl> weakSelf{get_shared_this_ptr()};
+        deadLetterProducer_->getFuture().addListener([weakSelf, message, messageId, cb](Result res,
+                                                                                        Producer producer) {
+            auto self = weakSelf.lock();
+            if (!self) {
+                return;
+            }
             auto originMessageId = message.getMessageId();
             std::stringstream originMessageIdStr;
             originMessageIdStr << originMessageId;
@@ -1633,8 +1652,12 @@ void ConsumerImpl::processPossibleToDLQ(const MessageId& messageId, ProcessDLQCa
             if (message.hasOrderingKey()) {
                 msgBuilder.setOrderingKey(message.getOrderingKey());
             }
-            producer.sendAsync(msgBuilder.build(), [self, originMessageId, cb](Result res,
-                                                                               const MessageId& messageId) {
+            producer.sendAsync(msgBuilder.build(), [weakSelf, originMessageId, messageId, cb](
+                                                       Result res, const MessageId& messageIdInDLQ) {
+                auto self = weakSelf.lock();
+                if (!self) {
+                    return;
+                }
                 if (res == ResultOk) {
                     if (self->state_ != Ready) {
                         LOG_WARN(
@@ -1643,7 +1666,12 @@ void ConsumerImpl::processPossibleToDLQ(const MessageId& messageId, ProcessDLQCa
                         cb(false);
                         return;
                     }
-                    self->acknowledgeAsync(originMessageId, [self, originMessageId, cb](Result result) {
+                    self->possibleSendToDeadLetterTopicMessages_.remove(messageId);
+                    self->acknowledgeAsync(originMessageId, [weakSelf, originMessageId, cb](Result result) {
+                        auto self = weakSelf.lock();
+                        if (!self) {
+                            return;
+                        }
                         if (result != ResultOk) {
                             LOG_WARN("{" << self->topic_ << "} {" << self->subscription_ << "} {"
                                          << self->consumerName_ << "} Failed to acknowledge the message {"

@@ -70,7 +70,7 @@ TEST(DeadLetterQueueTest, testDLQWithSchema) {
     producerConfig.setSchema(schemaInfo);
     ASSERT_EQ(ResultOk, client.createProducer(topic, producerConfig, producer));
     std::string data = "{\"re\":2.1,\"im\":1.23}";
-    const int num = 1;
+    const int num = 10;
     for (int i = 0; i < num; ++i) {
         ASSERT_EQ(ResultOk, producer.send(MessageBuilder().setContent(data).build()));
     }
@@ -85,9 +85,9 @@ TEST(DeadLetterQueueTest, testDLQWithSchema) {
     // assert dlq msg.
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterConsumer.receive(msg, 5000));
-        ASSERT_TRUE(!msg.getDataAsString().empty());
+        ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
-        ASSERT_TRUE(!msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
+        ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
     ASSERT_EQ(ResultTimeout, deadLetterConsumer.receive(msg, 200));
 
@@ -118,7 +118,7 @@ TEST(DeadLetterQueueTest, testWithoutConsumerReceiveImmediately) {
     producer.send(MessageBuilder().setContent("msg").build());
 
     // Wait a while, message should not be send to DLQ
-    sleep(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     Message msg;
     ASSERT_EQ(ResultOk, consumer.receive(msg));
@@ -237,14 +237,70 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByAckTimeOutAndNeAck) {
     ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
-        ASSERT_TRUE(!msg.getDataAsString().empty());
+        ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_EQ(msg.getPartitionKey(), "p-key");
         ASSERT_EQ(msg.getOrderingKey(), "o-key");
         ASSERT_EQ(msg.getProperty("pk-1"), "pv-1");
         ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
-        ASSERT_TRUE(!msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
+        ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
 
+    ASSERT_EQ(ResultTimeout, deadLetterQueueConsumer.receive(msg, 200));
+}
+
+TEST_P(DeadLetterQueueTest, testSendDLQTriggerByRedeliverUnacknowledgedMessages) {
+    Client client(lookupUrl);
+    const std::string topic = "testSendDLQTriggerByRedeliverUnacknowledgedMessages-" +
+                              std::to_string(time(nullptr)) + std::to_string(isMultiConsumer_) +
+                              std::to_string(isProducerBatch_) + std::to_string(consumerType_);
+    const std::string subName = "dlq-sub";
+    const std::string dlqTopic = topic + subName + "DLQ";
+    initTopic(topic);
+
+    auto dlqPolicy = DeadLetterPolicyBuilder().maxRedeliverCount(3).deadLetterTopic(dlqTopic).build();
+    ConsumerConfiguration consumerConfig;
+    consumerConfig.setDeadLetterPolicy(dlqPolicy);
+    consumerConfig.setConsumerType(consumerType_);
+    Consumer consumer;
+    ASSERT_EQ(ResultOk, client.subscribe(topic, subName, consumerConfig, consumer));
+
+    Producer producer;
+    ASSERT_EQ(ResultOk, client.createProducer(topic, producerConf_, producer));
+
+    const int num = 10;
+    Message msg;
+    for (int i = 0; i < num; ++i) {
+        msg = MessageBuilder()
+                  .setContent(std::to_string(i))
+                  .setPartitionKey("p-key")
+                  .setOrderingKey("o-key")
+                  .setProperty("pk-1", "pv-1")
+                  .build();
+        producer.sendAsync(msg, [](Result res, const MessageId &msgId) { ASSERT_EQ(res, ResultOk); });
+    }
+
+    // nack all msg.
+    for (int i = 1; i <= dlqPolicy.getMaxRedeliverCount() * num + num; ++i) {
+        ASSERT_EQ(ResultOk, consumer.receive(msg));
+        if (i % num == 0) {
+            consumer.redeliverUnacknowledgedMessages();
+        }
+    }
+
+    // assert dlq msg.
+    Consumer deadLetterQueueConsumer;
+    ConsumerConfiguration dlqConsumerConfig;
+    dlqConsumerConfig.setSubscriptionInitialPosition(InitialPositionEarliest);
+    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
+    for (int i = 0; i < num; i++) {
+        ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
+        ASSERT_FALSE(msg.getDataAsString().empty());
+        ASSERT_EQ(msg.getPartitionKey(), "p-key");
+        ASSERT_EQ(msg.getOrderingKey(), "o-key");
+        ASSERT_EQ(msg.getProperty("pk-1"), "pv-1");
+        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
+        ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
+    }
     ASSERT_EQ(ResultTimeout, deadLetterQueueConsumer.receive(msg, 200));
 }
 
@@ -293,12 +349,12 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByNegativeAcknowledge) {
     ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
-        ASSERT_TRUE(!msg.getDataAsString().empty());
+        ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_EQ(msg.getPartitionKey(), "p-key");
         ASSERT_EQ(msg.getOrderingKey(), "o-key");
         ASSERT_EQ(msg.getProperty("pk-1"), "pv-1");
         ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
-        ASSERT_TRUE(!msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
+        ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
     ASSERT_EQ(ResultTimeout, deadLetterQueueConsumer.receive(msg, 200));
 }
@@ -349,9 +405,9 @@ TEST_P(DeadLetterQueueTest, testInitSubscription) {
     // Use this subscription to ensure that messages are sent to the DLQ.
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
-        ASSERT_TRUE(!msg.getDataAsString().empty());
+        ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
-        ASSERT_TRUE(!msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
+        ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
 
     // If there is no initial subscription, then the subscription will not receive the DLQ messages sent
@@ -362,29 +418,21 @@ TEST_P(DeadLetterQueueTest, testInitSubscription) {
     ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, dlqInitSub, initDLQConsumerConfig, initDLQConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, initDLQConsumer.receive(msg, 1000));
-        ASSERT_TRUE(!msg.getDataAsString().empty());
+        ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
-        ASSERT_TRUE(!msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
+        ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
     ASSERT_EQ(ResultTimeout, initDLQConsumer.receive(msg, 200));
 }
 
-bool isBatchs[2] = {true, false};
-bool isMultiTopics[2] = {true, false};
-ConsumerType subTypes[2] = {ConsumerType::ConsumerShared, ConsumerType::ConsumerKeyShared};
-
-std::vector<std::tuple<bool, bool, ConsumerType>> getValues() {
-    std::vector<std::tuple<bool, bool, ConsumerType>> values;
-    for (const auto isBatch : isBatchs) {
-        for (const auto isMultiTopic : isMultiTopics) {
-            for (const auto subType : subTypes) {
-                values.emplace_back(std::make_tuple(isBatch, isMultiTopic, subType));
-            }
-        }
-    }
-    return values;
-}
-
-INSTANTIATE_TEST_CASE_P(Pulsar, DeadLetterQueueTest, ::testing::ValuesIn(getValues()));
+INSTANTIATE_TEST_SUITE_P(Pulsar, DeadLetterQueueTest,
+                         testing::Combine(testing::Values(true, false), testing::Values(true, false),
+                                          testing::Values(ConsumerType::ConsumerShared,
+                                                          ConsumerType::ConsumerKeyShared)),
+                         [](const testing::TestParamInfo<DeadLetterQueueTest::ParamType> &info) {
+                             return "isBatch_" + std::to_string(std::get<0>(info.param)) + "_isMultiTopics_" +
+                                    std::to_string(std::get<1>(info.param)) + "_subType_" +
+                                    std::to_string(std::get<2>(info.param));
+                         });
 
 }  // namespace pulsar

@@ -42,7 +42,7 @@ class PULSAR_PUBLIC DeadLetterPolicy {
      *
      * @return
      */
-    std::string getDeadLetterTopic() const;
+    const std::string& getDeadLetterTopic() const;
 
     /**
      * Get max redeliver count
@@ -56,7 +56,7 @@ class PULSAR_PUBLIC DeadLetterPolicy {
      *
      * @return
      */
-    std::string getInitialSubscriptionName() const;
+    const std::string& getInitialSubscriptionName() const;
 
    private:
     friend class DeadLetterPolicyBuilder;

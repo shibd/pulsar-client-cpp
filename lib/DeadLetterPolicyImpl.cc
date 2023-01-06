@@ -27,11 +27,13 @@ namespace pulsar {
 
 DeadLetterPolicy::DeadLetterPolicy() : impl_(std::make_shared<DeadLetterPolicyImpl>()) {}
 
-std::string DeadLetterPolicy::getDeadLetterTopic() const { return impl_->deadLetterTopic; }
+const std::string& DeadLetterPolicy::getDeadLetterTopic() const { return impl_->deadLetterTopic; }
 
 int DeadLetterPolicy::getMaxRedeliverCount() const { return impl_->maxRedeliverCount; }
 
-std::string DeadLetterPolicy::getInitialSubscriptionName() const { return impl_->initialSubscriptionName; }
+const std::string& DeadLetterPolicy::getInitialSubscriptionName() const {
+    return impl_->initialSubscriptionName;
+}
 
 DeadLetterPolicy::DeadLetterPolicy(const DeadLetterPolicy::DeadLetterPolicyImplPtr& impl) : impl_(impl) {}
 

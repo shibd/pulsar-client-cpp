@@ -32,6 +32,8 @@ ProducerConfiguration::~ProducerConfiguration() {}
 
 ProducerConfiguration::ProducerConfiguration(const ProducerConfiguration& x) : impl_(x.impl_) {}
 
+ProducerConfiguration::ProducerConfiguration(ProducerConfigurationImplPtr& impl) : impl_(impl) {}
+
 ProducerConfiguration& ProducerConfiguration::operator=(const ProducerConfiguration& x) {
     impl_ = x.impl_;
     return *this;
@@ -266,16 +268,6 @@ ProducerConfiguration& ProducerConfiguration::setAccessMode(const ProducerAccess
 }
 ProducerConfiguration::ProducerAccessMode ProducerConfiguration::getAccessMode() const {
     return impl_->accessMode;
-}
-
-ProducerConfiguration& ProducerConfiguration::setInitialSubscriptionName(
-    const std::string& initialSubscriptionName) {
-    impl_->initialSubscriptionName = initialSubscriptionName;
-    return *this;
-}
-
-const std::string& ProducerConfiguration::getInitialSubscriptionName() const {
-    return impl_->initialSubscriptionName;
 }
 
 }  // namespace pulsar
