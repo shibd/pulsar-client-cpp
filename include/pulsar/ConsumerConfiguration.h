@@ -403,8 +403,8 @@ class PULSAR_PUBLIC ConsumerConfiguration {
      * Set dead letter policy for consumer
      *
      * By default, some messages are redelivered many times, even to the extent that they can never be
-     * stopped. By using the dead letter mechanism, messages have the max redelivery count, when they exceeding
-     * the maximum number of redeliveries. Messages are sent to dead letter topics and acknowledged
+     * stopped. By using the dead letter mechanism, messages have the max redelivery count, when they
+     * exceeding the maximum number of redeliveries. Messages are sent to dead letter topics and acknowledged
      * automatically.
      *
      * You can enable the dead letter mechanism by setting the dead letter policy.
