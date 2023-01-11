@@ -23,6 +23,7 @@
 #include "HttpHelper.h"
 #include "PulsarFriend.h"
 #include "lib/ClientConnection.h"
+#include "lib/ConsumerConfigurationImpl.h"
 #include "lib/LogUtils.h"
 #include "lib/MessageIdUtil.h"
 #include "lib/UnAckedMessageTrackerEnabled.h"
@@ -151,64 +152,55 @@ class DeadLetterQueueTest : public ::testing::TestWithParam<std::tuple<bool, boo
         isProducerBatch_ = std::get<0>(GetParam());
         isMultiConsumer_ = std::get<1>(GetParam());
         consumerType_ = std::get<2>(GetParam());
-        producerConf_ = ProducerConfiguration().setBatchingEnabled(isProducerBatch_);
-    }
 
-    void TearDown() override { client_.close(); }
+        std::string testSuiteName = testing::UnitTest::GetInstance()->current_test_info()->name();
+        replace(testSuiteName.begin(), testSuiteName.end(), '/', '_');
+        topic_ = testSuiteName + std::to_string(time(nullptr));
+        subName_ = "test-sub";
+        dlqTopic_ = topic_ + "-" + subName_ + "-DLQ";
 
-    void initTopic(std::string topicName) {
         if (isMultiConsumer_) {
             // call admin api to make it partitioned
-            std::string url = adminUrl + "admin/v2/persistent/public/default/" + topicName + "/partitions";
+            std::string url = adminUrl + "admin/v2/persistent/public/default/" + topic_ + "/partitions";
             int res = makePutRequest(url, "5");
             LOG_INFO("res = " << res);
             ASSERT_FALSE(res != 204 && res != 409);
         }
+
+        producerConf_.setBatchingEnabled(isProducerBatch_);
+        consumerConf_.setConsumerType(consumerType_);
+        consumerConf_.setDeadLetterPolicy(
+            DeadLetterPolicyBuilder().maxRedeliverCount(3).deadLetterTopic(dlqTopic_).build());
     }
+
+    void setConsumerUnAckMessageTimeoutMs(int unAckedMessagesTimeoutMs) {
+        consumerConf_.impl_->unAckedMessagesTimeoutMs = unAckedMessagesTimeoutMs;
+    }
+
+    void TearDown() override { client_.close(); }
 
    protected:
     Client client_{lookupUrl};
     ProducerConfiguration producerConf_;
+    ConsumerConfiguration consumerConf_;
     bool isMultiConsumer_;
     bool isProducerBatch_;
     ConsumerType consumerType_;
+    std::string topic_;
+    std::string subName_;
+    std::string dlqTopic_;
 };
 
 TEST_P(DeadLetterQueueTest, testSendDLQTriggerByAckTimeOutAndNeAck) {
     Client client(lookupUrl);
-    const std::string topic = "testSendDLQTriggerByAckTimeOut-" + std::to_string(time(nullptr)) +
-                              std::to_string(isMultiConsumer_) + std::to_string(isProducerBatch_) +
-                              std::to_string(consumerType_);
-    const std::string subName = "dlq-sub";
-    const std::string dlqTopic = topic + "-" + subName + "-DLQ";
-    initTopic(topic);
 
-    auto dlqPolicy = DeadLetterPolicyBuilder().maxRedeliverCount(3).deadLetterTopic(dlqTopic).build();
-    ConsumerConfiguration consumerConfig;
-    consumerConfig.setDeadLetterPolicy(dlqPolicy);
-    consumerConfig.setNegativeAckRedeliveryDelayMs(100);
-    consumerConfig.setConsumerType(consumerType_);
     Consumer consumer;
-    ASSERT_EQ(ResultOk, client.subscribe(topic, subName, consumerConfig, consumer));
-
-    // Reset the unack timeout
-    long unackTimeOut = 200;
-    if (isMultiConsumer_) {
-        auto multiConsumer = PulsarFriend::getMultiTopicsConsumerImplPtr(consumer);
-        multiConsumer->unAckedMessageTrackerPtr_.reset(new UnAckedMessageTrackerEnabled(
-            unackTimeOut, PulsarFriend::getClientImplPtr(client), *multiConsumer));
-        multiConsumer->consumers_.forEachValue([&client, unackTimeOut](ConsumerImplPtr consumer) {
-            consumer->unAckedMessageTrackerPtr_.reset(new UnAckedMessageTrackerEnabled(
-                unackTimeOut, PulsarFriend::getClientImplPtr(client), *consumer));
-        });
-    } else {
-        auto &consumerImpl = PulsarFriend::getConsumerImpl(consumer);
-        consumerImpl.unAckedMessageTrackerPtr_.reset(new UnAckedMessageTrackerEnabled(
-            unackTimeOut, PulsarFriend::getClientImplPtr(client), consumerImpl));
-    }
+    setConsumerUnAckMessageTimeoutMs(200);
+    consumerConf_.setNegativeAckRedeliveryDelayMs(100);
+    ASSERT_EQ(ResultOk, client.subscribe(topic_, subName_, consumerConf_, consumer));
 
     Producer producer;
-    ASSERT_EQ(ResultOk, client.createProducer(topic, producerConf_, producer));
+    ASSERT_EQ(ResultOk, client.createProducer(topic_, producerConf_, producer));
     const int num = 100;
     Message msg;
     for (int i = 0; i < num; ++i) {
@@ -222,7 +214,7 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByAckTimeOutAndNeAck) {
     }
 
     // receive messages and don't ack.
-    for (int i = 0; i < dlqPolicy.getMaxRedeliverCount() * num + num; ++i) {
+    for (int i = 0; i < consumerConf_.getDeadLetterPolicy().getMaxRedeliverCount() * num + num; ++i) {
         ASSERT_EQ(ResultOk, consumer.receive(msg));
         // Randomly specify some messages manually negativeAcknowledge.
         if (rand() % 2 == 0) {
@@ -234,14 +226,14 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByAckTimeOutAndNeAck) {
     Consumer deadLetterQueueConsumer;
     ConsumerConfiguration dlqConsumerConfig;
     dlqConsumerConfig.setSubscriptionInitialPosition(InitialPositionEarliest);
-    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
+    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic_, subName_, dlqConsumerConfig, deadLetterQueueConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
         ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_EQ(msg.getPartitionKey(), "p-key");
         ASSERT_EQ(msg.getOrderingKey(), "o-key");
         ASSERT_EQ(msg.getProperty("pk-1"), "pv-1");
-        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
+        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic_));
         ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
 
@@ -250,22 +242,12 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByAckTimeOutAndNeAck) {
 
 TEST_P(DeadLetterQueueTest, testSendDLQTriggerByRedeliverUnacknowledgedMessages) {
     Client client(lookupUrl);
-    const std::string topic = "testSendDLQTriggerByRedeliverUnacknowledgedMessages-" +
-                              std::to_string(time(nullptr)) + std::to_string(isMultiConsumer_) +
-                              std::to_string(isProducerBatch_) + std::to_string(consumerType_);
-    const std::string subName = "dlq-sub";
-    const std::string dlqTopic = topic + subName + "DLQ";
-    initTopic(topic);
 
-    auto dlqPolicy = DeadLetterPolicyBuilder().maxRedeliverCount(3).deadLetterTopic(dlqTopic).build();
-    ConsumerConfiguration consumerConfig;
-    consumerConfig.setDeadLetterPolicy(dlqPolicy);
-    consumerConfig.setConsumerType(consumerType_);
     Consumer consumer;
-    ASSERT_EQ(ResultOk, client.subscribe(topic, subName, consumerConfig, consumer));
+    ASSERT_EQ(ResultOk, client.subscribe(topic_, subName_, consumerConf_, consumer));
 
     Producer producer;
-    ASSERT_EQ(ResultOk, client.createProducer(topic, producerConf_, producer));
+    ASSERT_EQ(ResultOk, client.createProducer(topic_, producerConf_, producer));
 
     const int num = 10;
     Message msg;
@@ -280,7 +262,7 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByRedeliverUnacknowledgedMessages)
     }
 
     // nack all msg.
-    for (int i = 1; i <= dlqPolicy.getMaxRedeliverCount() * num + num; ++i) {
+    for (int i = 1; i <= consumerConf_.getDeadLetterPolicy().getMaxRedeliverCount() * num + num; ++i) {
         ASSERT_EQ(ResultOk, consumer.receive(msg));
         if (i % num == 0) {
             consumer.redeliverUnacknowledgedMessages();
@@ -291,14 +273,14 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByRedeliverUnacknowledgedMessages)
     Consumer deadLetterQueueConsumer;
     ConsumerConfiguration dlqConsumerConfig;
     dlqConsumerConfig.setSubscriptionInitialPosition(InitialPositionEarliest);
-    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
+    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic_, subName_, dlqConsumerConfig, deadLetterQueueConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
         ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_EQ(msg.getPartitionKey(), "p-key");
         ASSERT_EQ(msg.getOrderingKey(), "o-key");
         ASSERT_EQ(msg.getProperty("pk-1"), "pv-1");
-        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
+        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic_));
         ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
     ASSERT_EQ(ResultTimeout, deadLetterQueueConsumer.receive(msg, 200));
@@ -306,23 +288,13 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByRedeliverUnacknowledgedMessages)
 
 TEST_P(DeadLetterQueueTest, testSendDLQTriggerByNegativeAcknowledge) {
     Client client(lookupUrl);
-    const std::string topic = "testSendDLQTriggerByNegativeAcknowledge-" + std::to_string(time(nullptr)) +
-                              std::to_string(isMultiConsumer_) + std::to_string(isProducerBatch_) +
-                              std::to_string(consumerType_);
-    const std::string subName = "dlq-sub";
-    const std::string dlqTopic = topic + subName + "DLQ";
-    initTopic(topic);
 
-    auto dlqPolicy = DeadLetterPolicyBuilder().maxRedeliverCount(3).deadLetterTopic(dlqTopic).build();
-    ConsumerConfiguration consumerConfig;
-    consumerConfig.setDeadLetterPolicy(dlqPolicy);
-    consumerConfig.setNegativeAckRedeliveryDelayMs(100);
-    consumerConfig.setConsumerType(consumerType_);
     Consumer consumer;
-    ASSERT_EQ(ResultOk, client.subscribe(topic, subName, consumerConfig, consumer));
+    consumerConf_.setNegativeAckRedeliveryDelayMs(100);
+    ASSERT_EQ(ResultOk, client.subscribe(topic_, subName_, consumerConf_, consumer));
 
     Producer producer;
-    ASSERT_EQ(ResultOk, client.createProducer(topic, producerConf_, producer));
+    ASSERT_EQ(ResultOk, client.createProducer(topic_, producerConf_, producer));
 
     const int num = 10;
     Message msg;
@@ -337,7 +309,7 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByNegativeAcknowledge) {
     }
 
     // nack all msg.
-    for (int i = 0; i < dlqPolicy.getMaxRedeliverCount() * num + num; ++i) {
+    for (int i = 0; i < consumerConf_.getDeadLetterPolicy().getMaxRedeliverCount() * num + num; ++i) {
         ASSERT_EQ(ResultOk, consumer.receive(msg));
         consumer.negativeAcknowledge(msg);
     }
@@ -346,14 +318,14 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByNegativeAcknowledge) {
     Consumer deadLetterQueueConsumer;
     ConsumerConfiguration dlqConsumerConfig;
     dlqConsumerConfig.setSubscriptionInitialPosition(InitialPositionEarliest);
-    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
+    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic_, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
         ASSERT_FALSE(msg.getDataAsString().empty());
         ASSERT_EQ(msg.getPartitionKey(), "p-key");
         ASSERT_EQ(msg.getOrderingKey(), "o-key");
         ASSERT_EQ(msg.getProperty("pk-1"), "pv-1");
-        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
+        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic_));
         ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
     ASSERT_EQ(ResultTimeout, deadLetterQueueConsumer.receive(msg, 200));
@@ -361,33 +333,25 @@ TEST_P(DeadLetterQueueTest, testSendDLQTriggerByNegativeAcknowledge) {
 
 TEST_P(DeadLetterQueueTest, testInitSubscription) {
     Client client(lookupUrl);
-    const std::string topic = "testInitSubscription-" + std::to_string(time(nullptr)) +
-                              std::to_string(isMultiConsumer_) + std::to_string(isProducerBatch_) +
-                              std::to_string(consumerType_);
-    const std::string subName = "dlq-sub";
-    const std::string dlqTopic = topic + subName + "DLQ";
-    const std::string dlqInitSub = "dlq-init-sub";
-    initTopic(topic);
 
+    const std::string dlqInitSub = "dlq-init-sub";
     auto dlqPolicy = DeadLetterPolicyBuilder()
                          .maxRedeliverCount(3)
                          .initialSubscriptionName(dlqInitSub)
-                         .deadLetterTopic(dlqTopic)
+                         .deadLetterTopic(dlqTopic_)
                          .build();
-    ConsumerConfiguration consumerConfig;
-    consumerConfig.setDeadLetterPolicy(dlqPolicy);
-    consumerConfig.setNegativeAckRedeliveryDelayMs(100);
-    consumerConfig.setConsumerType(consumerType_);
+    consumerConf_.setDeadLetterPolicy(dlqPolicy);
+    consumerConf_.setNegativeAckRedeliveryDelayMs(100);
     Consumer consumer;
-    ASSERT_EQ(ResultOk, client.subscribe(topic, subName, consumerConfig, consumer));
+    ASSERT_EQ(ResultOk, client.subscribe(topic_, subName_, consumerConf_, consumer));
 
     Consumer deadLetterQueueConsumer;
     ConsumerConfiguration dlqConsumerConfig;
     dlqConsumerConfig.setSubscriptionInitialPosition(InitialPositionEarliest);
-    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, "dlq-sub", dlqConsumerConfig, deadLetterQueueConsumer));
+    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic_, subName_, dlqConsumerConfig, deadLetterQueueConsumer));
 
     Producer producer;
-    ASSERT_EQ(ResultOk, client.createProducer(topic, producerConf_, producer));
+    ASSERT_EQ(ResultOk, client.createProducer(topic_, producerConf_, producer));
 
     const int num = 10;
     Message msg;
@@ -406,7 +370,7 @@ TEST_P(DeadLetterQueueTest, testInitSubscription) {
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, deadLetterQueueConsumer.receive(msg));
         ASSERT_FALSE(msg.getDataAsString().empty());
-        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
+        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic_));
         ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
 
@@ -415,11 +379,11 @@ TEST_P(DeadLetterQueueTest, testInitSubscription) {
     Consumer initDLQConsumer;
     ConsumerConfiguration initDLQConsumerConfig;
     dlqConsumerConfig.setSubscriptionInitialPosition(InitialPositionLatest);
-    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic, dlqInitSub, initDLQConsumerConfig, initDLQConsumer));
+    ASSERT_EQ(ResultOk, client.subscribe(dlqTopic_, dlqInitSub, initDLQConsumerConfig, initDLQConsumer));
     for (int i = 0; i < num; i++) {
         ASSERT_EQ(ResultOk, initDLQConsumer.receive(msg, 1000));
         ASSERT_FALSE(msg.getDataAsString().empty());
-        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic));
+        ASSERT_TRUE(msg.getProperty(SYSTEM_PROPERTY_REAL_TOPIC).find(topic_));
         ASSERT_FALSE(msg.getProperty(PROPERTY_ORIGIN_MESSAGE_ID).empty());
     }
     ASSERT_EQ(ResultTimeout, initDLQConsumer.receive(msg, 200));

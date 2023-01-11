@@ -50,10 +50,11 @@ TEST(SchemaTest, testSchema) {
     res = client.createProducer("topic-avro", producerConf, producer);
     ASSERT_EQ(ResultIncompatibleSchema, res);
 
-    // Creating producer with no schema on same topic should failed.
-    // Because we set broker config isSchemaValidationEnforced=true
+    // Creating producer with no schema on same topic should succeed
+    // because standalone broker is configured by default to not
+    // require the schema to be set
     res = client.createProducer("topic-avro", producer);
-    ASSERT_EQ(ResultIncompatibleSchema, res);
+    ASSERT_EQ(ResultOk, res);
 
     ConsumerConfiguration consumerConf;
     Consumer consumer;

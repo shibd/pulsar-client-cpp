@@ -533,10 +533,7 @@ class PULSAR_PUBLIC ProducerConfiguration {
     ProducerAccessMode getAccessMode() const;
 
    private:
-    typedef std::shared_ptr<ProducerConfigurationImpl> ProducerConfigurationImplPtr;
-    ProducerConfigurationImplPtr impl_;
-
-    ProducerConfiguration(ProducerConfigurationImplPtr& impl);
+    std::shared_ptr<ProducerConfigurationImpl> impl_;
 
     friend class PulsarWrapper;
     friend class ConsumerImpl;

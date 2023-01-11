@@ -591,6 +591,7 @@ class PULSAR_PUBLIC ConsumerConfiguration {
     bool isStartMessageIdInclusive() const;
 
     friend class PulsarWrapper;
+    friend class DeadLetterQueueTest;
 
    private:
     std::shared_ptr<ConsumerConfigurationImpl> impl_;

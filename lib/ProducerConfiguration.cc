@@ -32,8 +32,6 @@ ProducerConfiguration::~ProducerConfiguration() {}
 
 ProducerConfiguration::ProducerConfiguration(const ProducerConfiguration& x) : impl_(x.impl_) {}
 
-ProducerConfiguration::ProducerConfiguration(ProducerConfigurationImplPtr& impl) : impl_(impl) {}
-
 ProducerConfiguration& ProducerConfiguration::operator=(const ProducerConfiguration& x) {
     impl_ = x.impl_;
     return *this;
