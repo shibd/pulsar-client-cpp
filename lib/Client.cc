@@ -38,16 +38,10 @@ Client::Client(const std::string& serviceUrl)
 Client::Client(const std::string& serviceUrl, const ClientConfiguration& clientConfiguration)
     : impl_(std::make_shared<ClientImpl>(serviceUrl, clientConfiguration, true)) {}
 
-Client::Client(const ServiceUrlProviderPtr& serviceUrlProviderPtr)
-    : impl_(std::make_shared<ClientImpl>(serviceUrlProviderPtr, ClientConfiguration())) {
-    serviceUrlProviderPtr->initialize(*this);
-}
+Client::Client(ServiceUrlProvider serviceUrlProvider) : Client(serviceUrlProvider()) {}
 
-Client::Client(const ServiceUrlProviderPtr& serviceUrlProviderPtr,
-               const ClientConfiguration& clientConfiguration)
-    : impl_(std::make_shared<ClientImpl>(serviceUrlProviderPtr, clientConfiguration)) {
-    serviceUrlProviderPtr->initialize(*this);
-}
+Client::Client(ServiceUrlProvider serviceUrlProvider, const ClientConfiguration& clientConfiguration)
+    : Client(serviceUrlProvider(), clientConfiguration) {}
 
 Client::Client(const std::string& serviceUrl, const ClientConfiguration& clientConfiguration,
                bool poolConnections)

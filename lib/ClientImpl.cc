@@ -74,12 +74,6 @@ typedef std::unique_lock<std::mutex> Lock;
 
 typedef std::vector<std::string> StringList;
 
-ClientImpl::ClientImpl(const ServiceUrlProviderPtr& serviceUrlProviderPtr,
-                       const ClientConfiguration& clientConfiguration)
-    : ClientImpl(serviceUrlProviderPtr->getServiceUrl(), clientConfiguration, true) {
-    serviceUrlProviderPtr_ = serviceUrlProviderPtr;
-}
-
 ClientImpl::ClientImpl(const std::string& serviceUrl, const ClientConfiguration& clientConfiguration,
                        bool poolConnections)
     : mutex_(),
@@ -528,9 +522,6 @@ void ClientImpl::closeAsync(CloseCallback callback) {
     state_ = Closing;
 
     memoryLimitController_.close();
-    if (serviceUrlProviderPtr_) {
-        serviceUrlProviderPtr_->close();
-    }
 
     auto producers = producers_.move();
     auto consumers = consumers_.move();

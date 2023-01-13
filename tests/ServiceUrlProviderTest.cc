@@ -18,34 +18,11 @@
  */
 #include <gtest/gtest.h>
 #include <pulsar/Client.h>
-#include <pulsar/ServiceUrlProvider.h>
 
 using namespace pulsar;
 
 static const std::string lookupUrl = "pulsar://localhost:6650";
 static const std::string adminUrl = "http://localhost:8080/";
-
-class MockServiceUrlProvider : public ServiceUrlProvider {
-   public:
-    explicit MockServiceUrlProvider(const std::string& serviceUrl) : serviceUrl_(serviceUrl) {}
-
-    void initialize(const Client& client) override { clientPtr_ = std::make_shared<Client>(client); }
-
-    const std::string& getServiceUrl() override { return serviceUrl_; }
-
-    void close() override { closed_ = true; }
-
-    Result updateUrl(const std::string& updateServiceUrl) {
-        serviceUrl_ = updateServiceUrl;
-        return clientPtr_->updateServiceUrl(serviceUrl_);
-    }
-
-    bool isClose() { return closed_; }
-
-    std::string serviceUrl_;
-    std::shared_ptr<Client> clientPtr_;
-    std::atomic_bool closed_{false};
-};
 
 class ServiceUrlProviderTest : public ::testing::TestWithParam<std::string> {
    public:
@@ -56,8 +33,7 @@ class ServiceUrlProviderTest : public ::testing::TestWithParam<std::string> {
 
 TEST_P(ServiceUrlProviderTest, testBasicUpdateUrl) {
     const std::string topicName = "basicUpdateUrl-" + std::to_string(time(nullptr));
-    ServiceUrlProviderPtr serviceUrlProviderPtr = std::make_shared<MockServiceUrlProvider>(serviceUrl);
-    Client client(serviceUrlProviderPtr);
+    Client client([this]() -> const std::string& { return serviceUrl; });
 
     Producer producer1;
     ASSERT_EQ(ResultOk, client.createProducer(topicName, producer1));
@@ -66,8 +42,7 @@ TEST_P(ServiceUrlProviderTest, testBasicUpdateUrl) {
     ASSERT_EQ(ResultOk, client.subscribe(topicName, "test-sub", consumer));
 
     // Update service url.
-    auto mockServiceUrlProviderPtr = std::dynamic_pointer_cast<MockServiceUrlProvider>(serviceUrlProviderPtr);
-    ASSERT_EQ(ResultOk, mockServiceUrlProviderPtr->updateUrl(serviceUrl));
+    ASSERT_EQ(ResultOk, client.updateServiceUrl(serviceUrl));
     Producer producer2;
     ASSERT_EQ(ResultOk, client.createProducer(topicName, producer2));
 
@@ -84,8 +59,6 @@ TEST_P(ServiceUrlProviderTest, testBasicUpdateUrl) {
     }
 
     client.close();
-
-    ASSERT_TRUE(mockServiceUrlProviderPtr->isClose());
 }
 
 TEST(ServiceUrlProviderTest, testInvalidServiceUrl) {
@@ -93,18 +66,15 @@ TEST(ServiceUrlProviderTest, testInvalidServiceUrl) {
 
     // Assert invalid url throw exception when create client.
     {
-        ServiceUrlProviderPtr serviceUrlProviderPtr =
-            std::make_shared<MockServiceUrlProvider>(invalidServiceUrl);
-        ASSERT_THROW(Client client(serviceUrlProviderPtr), std::invalid_argument);
+        ASSERT_THROW(
+            Client client([&invalidServiceUrl]() -> const std::string& { return invalidServiceUrl; }),
+            std::invalid_argument);
     }
 
     // Assert return ResultInvalidUrl when client.updateServiceUrl(invalidServiceUrl);
     {
-        ServiceUrlProviderPtr serviceUrlProviderPtr = std::make_shared<MockServiceUrlProvider>(lookupUrl);
-        Client client(serviceUrlProviderPtr);
-        auto mockServiceUrlProviderPtr =
-            std::dynamic_pointer_cast<MockServiceUrlProvider>(serviceUrlProviderPtr);
-        ASSERT_EQ(ResultInvalidUrl, mockServiceUrlProviderPtr->updateUrl(invalidServiceUrl));
+        Client client([]() -> const std::string& { return lookupUrl; });
+        ASSERT_EQ(ResultInvalidUrl, client.updateServiceUrl(invalidServiceUrl));
     }
 }
 

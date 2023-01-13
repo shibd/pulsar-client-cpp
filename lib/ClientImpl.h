@@ -20,7 +20,6 @@
 #define LIB_CLIENTIMPL_H_
 
 #include <pulsar/Client.h>
-#include <pulsar/ServiceUrlProvider.h>
 
 #include <atomic>
 #include <memory>
@@ -65,8 +64,6 @@ std::string generateRandomName();
 
 class ClientImpl : public std::enable_shared_from_this<ClientImpl> {
    public:
-    ClientImpl(const ServiceUrlProviderPtr& serviceUrlProviderPtr,
-               const ClientConfiguration& clientConfiguration);
     ClientImpl(const std::string& serviceUrl, const ClientConfiguration& clientConfiguration,
                bool poolConnections);
     ~ClientImpl();
@@ -158,7 +155,6 @@ class ClientImpl : public std::enable_shared_from_this<ClientImpl> {
 
     State state_;
     ServiceNameResolver serviceNameResolver_;
-    ServiceUrlProviderPtr serviceUrlProviderPtr_;
 
     ClientConfiguration clientConfiguration_;
     MemoryLimitController memoryLimitController_;

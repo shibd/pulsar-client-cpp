@@ -29,7 +29,6 @@
 #include <pulsar/Reader.h>
 #include <pulsar/Result.h>
 #include <pulsar/Schema.h>
-#include <pulsar/ServiceUrlProvider.h>
 #include <pulsar/defines.h>
 
 #include <string>
@@ -40,6 +39,7 @@ typedef std::function<void(Result, Consumer)> SubscribeCallback;
 typedef std::function<void(Result, Reader)> ReaderCallback;
 typedef std::function<void(Result, const std::vector<std::string>&)> GetPartitionsCallback;
 typedef std::function<void(Result)> CloseCallback;
+typedef std::function<const std::string&()> ServiceUrlProvider;
 
 class ClientImpl;
 class PulsarFriend;
@@ -72,12 +72,12 @@ class PULSAR_PUBLIC Client {
      * configuration.
      *
      * <p>Instead of specifying a static service URL string (with {@link #serviceUrl(String)}), an application
-     * can pass a {@link ServiceUrlProvider} instance that dynamically provide a service URL.
+     * can pass a {@link ServiceUrlProvider} function that dynamically provide a service URL.
      *
-     * @param serviceUrlProviderPtr The ServiceUrlProviderPtr used to generate ServiceUrl.
-     * @throw std::invalid_argument if `ServiceUrlProviderPtr->getServiceUrl()` return a invalid url.
+     * @param serviceUrlProvider The serviceUrlProvider used to generate ServiceUrl.
+     * @throw std::invalid_argument if `serviceUrlProvider()` return a invalid url.
      */
-    Client(const ServiceUrlProviderPtr& serviceUrlProviderPtr);
+    Client(ServiceUrlProvider serviceUrlProvider);
 
     /**
      * Create a Pulsar client object connecting to the specified cluster address and using the specified
@@ -86,12 +86,11 @@ class PULSAR_PUBLIC Client {
      * <p>Instead of specifying a static service URL string (with {@link #serviceUrl(String)}), an application
      * can pass a {@link ServiceUrlProvider} instance that dynamically provide a service URL.
      *
-     * @param serviceUrlProviderPtr The ServiceUrlProviderPtr used to generate ServiceUrl.
+     * @param serviceUrlProvider The serviceUrlProvider used to generate ServiceUrl.
      * @param clientConfiguration the client configuration to use
-     * @throw std::invalid_argument if `ServiceUrlProviderPtr->getServiceUrl()` return a invalid url.
+     * @throw std::invalid_argument if `serviceUrlProvider()` return a invalid url.
      */
-    Client(const ServiceUrlProviderPtr& serviceUrlProviderPtr,
-           const ClientConfiguration& clientConfiguration);
+    Client(ServiceUrlProvider serviceUrlProvider, const ClientConfiguration& clientConfiguration);
 
     /**
      * Create a producer with default configuration
