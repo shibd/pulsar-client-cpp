@@ -36,7 +36,7 @@ ConsumerConfiguration consumerConfigOfReader;
 
 static ResultCallback emptyCallback;
 
-ReaderImpl::ReaderImpl(const ClientImplPtr client, const std::string& topic, const int partitions,
+ReaderImpl::ReaderImpl(const ClientImplPtr client, const std::string& topic, int partitions,
                        const ReaderConfiguration& conf, const ExecutorServicePtr listenerExecutor,
                        ReaderCallback readerCreatedCallback)
     : topic_(topic),

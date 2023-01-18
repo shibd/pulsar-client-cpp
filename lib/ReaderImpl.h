@@ -58,7 +58,7 @@ extern PULSAR_PUBLIC ConsumerConfiguration consumerConfigOfReader;
 
 class PULSAR_PUBLIC ReaderImpl : public std::enable_shared_from_this<ReaderImpl> {
    public:
-    ReaderImpl(const ClientImplPtr client, const std::string& topic, const int partitions,
+    ReaderImpl(const ClientImplPtr client, const std::string& topic, int partitions,
                const ReaderConfiguration& conf, const ExecutorServicePtr listenerExecutor,
                ReaderCallback readerCreatedCallback);
 
