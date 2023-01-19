@@ -87,6 +87,8 @@ class ClientImpl : public std::enable_shared_from_this<ClientImpl> {
 
     Future<Result, ClientConnectionWeakPtr> getConnection(const std::string& topic);
 
+    Result updateServiceUrl(const std::string& serviceUrl);
+
     void closeAsync(CloseCallback callback);
     void shutdown();
 
@@ -153,6 +155,7 @@ class ClientImpl : public std::enable_shared_from_this<ClientImpl> {
 
     State state_;
     ServiceNameResolver serviceNameResolver_;
+
     ClientConfiguration clientConfiguration_;
     MemoryLimitController memoryLimitController_;
 
