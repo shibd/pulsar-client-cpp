@@ -101,6 +101,7 @@ TEST(TableViewTest, testSimpleTableView) {
     }
     waitUntil(
         std::chrono::seconds(2), [&] { return tableView.size() == count * 2; }, 1000);
+    ASSERT_EQ(tableView.size(), count * 2);
 
     // assert interfaces.
     std::string value;
@@ -143,6 +144,7 @@ TEST(TableViewTest, testPublishNullValue) {
     ASSERT_EQ(ResultOk, producer.send(msg));
     waitUntil(
         std::chrono::seconds(2), [&] { return tableView.size() == count - 1; }, 1000);
+    ASSERT_EQ(tableView.size(), count - 1);
 
     // assert interfaces.
     std::string value;
@@ -159,7 +161,6 @@ TEST(TableViewTest, testNotSupportNonPersistentTopic) {
                               std::to_string(time(nullptr));
     Client client(lookupUrl);
 
-    // Create table view failed, The schema is not compatible
     TableViewConfiguration tableViewConfiguration;
     TableView tableView;
     ASSERT_EQ(ResultNotAllowedError, client.createTableView(topic, tableViewConfiguration, tableView));
@@ -169,13 +170,19 @@ TEST(TableViewTest, testNotSupportNonPersistentTopic) {
 TEST(TableViewTest, testMultiTopicAndAutoUpdatePartitions) {
     std::string uniqueTimeStr = std::to_string(time(nullptr));
     std::string topic = "persistent://public/default/testMultiTopicAndAutoUpdatePartitions" + uniqueTimeStr;
-    Client client(lookupUrl);
+    ClientConfiguration clientConfiguration;
+    clientConfiguration.setPartititionsUpdateInterval(1);
+    Client client(lookupUrl, clientConfiguration);
 
-    std::string url = adminUrl + "admin/v2/persistent/public/default/testMultiTopicAndAutoUpdatePartitions" +
-                      uniqueTimeStr + "/partitions";
-    int res = makePutRequest(url, "5");
-    LOG_INFO("res = " << res);
-    ASSERT_FALSE(res != 204 && res != 409);
+    // create partition is 5
+    {
+        std::string url = adminUrl +
+                          "admin/v2/persistent/public/default/testMultiTopicAndAutoUpdatePartitions" +
+                          uniqueTimeStr + "/partitions";
+        int res = makePutRequest(url, "5");
+        LOG_INFO("res = " << res);
+        ASSERT_FALSE(res != 204 && res != 409);
+    }
 
     ProducerConfiguration producerConfiguration;
     Producer producer;
@@ -192,8 +199,32 @@ TEST(TableViewTest, testMultiTopicAndAutoUpdatePartitions) {
 
     TableViewConfiguration tableViewConfiguration;
     TableView tableView;
-    // TODO need support multiReader first.
-    ASSERT_EQ(ResultOperationNotSupported, client.createTableView(topic, tableViewConfiguration, tableView));
+    ASSERT_EQ(ResultOk, client.createTableView(topic, tableViewConfiguration, tableView));
+    ASSERT_EQ(tableView.size(), count);
+
+    // update partitions is 10
+    {
+        std::string url = adminUrl +
+                          "admin/v2/persistent/public/default/testMultiTopicAndAutoUpdatePartitions" +
+                          uniqueTimeStr + "/partitions";
+        int res = makePostRequest(url, "10");
+        LOG_INFO("res = " << res);
+        ASSERT_FALSE(res != 204 && res != 409);
+    }
+    waitUntil(
+        std::chrono::seconds(5), [&] { return PulsarFriend::getPartitionProducerSize(producer) == 10; }, 200);
+    ASSERT_EQ(PulsarFriend::getPartitionProducerSize(producer), 10);
+
+    for (int i = count; i < count * 2; ++i) {
+        auto msg = MessageBuilder()
+                       .setPartitionKey("key" + std::to_string(i))
+                       .setContent("value" + std::to_string(i))
+                       .build();
+        ASSERT_EQ(ResultOk, producer.send(msg));
+    }
+    waitUntil(
+        std::chrono::seconds(10), [&] { return tableView.size() == count * 2; }, 200);
+    ASSERT_EQ(tableView.size(), count * 2);
 
     client.close();
 }
