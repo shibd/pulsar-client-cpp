@@ -943,6 +943,34 @@ TEST(ConsumerTest, testGetLastMessageIdBlockWhenConnectionDisconnected) {
     ASSERT_GE(elapsed.seconds(), operationTimeout);
 }
 
+TEST(ConsumerTest, testSubscribeRegex) {
+
+    Client client(lookupUrl);
+    const std::string topic =
+        "testSubscribeRegex-" + std::to_string(time(nullptr));
+
+    Producer producer1;
+    client.createProducer("non-persistent://public/default/test-1", producer1);
+
+    Producer producer2;
+    client.createProducer("non-persistent://public/default/test-2", producer1);
+
+    producer1.send(MessageBuilder().setContent("message-1").build());
+    producer2.send(MessageBuilder().setContent("message-2").build());
+
+    ConsumerConfiguration consumerConfiguration;
+    consumerConfiguration.setPatternAutoDiscoveryPeriod(1);
+    Consumer consumer;
+    std::string regex_pattern_sub = "non-persistent://public/default/.*";
+    ASSERT_EQ(ResultOk, client.subscribeWithRegex(regex_pattern_sub, "test-sub", consumerConfiguration, consumer));
+
+    Message msg;
+    for (int i = 0; i < 2; ++i) {
+        ASSERT_EQ(ResultOk, consumer.receive(msg));
+    }
+
+}
+
 TEST(ConsumerTest, testRedeliveryOfDecryptionFailedMessages) {
     ClientConfiguration config;
     Client client(lookupUrl);
