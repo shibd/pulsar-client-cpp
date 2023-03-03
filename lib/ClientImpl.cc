@@ -339,29 +339,45 @@ void ClientImpl::subscribeWithRegexAsync(const std::string& regexPattern, const 
         }
     }
 
-    NamespaceNamePtr nsName = topicNamePtr->getNamespaceName();
+    CommandGetTopicsOfNamespace_Mode mode;
+    if (!TopicName::containsDomain(regexPattern)) {
+        mode = CommandGetTopicsOfNamespace_Mode_ALL;
+    } else {
+        auto domain = topicNamePtr->getDomain();
+        if (domain == TopicDomain::Persistent) {
+            mode = CommandGetTopicsOfNamespace_Mode_PERSISTENT;
+        } else if (domain == TopicDomain::NonPersistent) {
+            mode = CommandGetTopicsOfNamespace_Mode_NON_PERSISTENT;
+        } else {
+            LOG_ERROR("Topic pattern not valid: " << regexPattern);
+            callback(ResultInvalidTopicName, Consumer());
+            return;
+        }
+    }
 
-    lookupServicePtr_->getTopicsOfNamespaceAsync(nsName).addListener(
-        std::bind(&ClientImpl::createPatternMultiTopicsConsumer, shared_from_this(), std::placeholders::_1,
-                  std::placeholders::_2, regexPattern, subscriptionName, conf, callback));
+    lookupServicePtr_->getTopicsOfNamespaceAsync(topicNamePtr->getNamespaceName(), mode)
+        .addListener(std::bind(&ClientImpl::createPatternMultiTopicsConsumer, shared_from_this(),
+                               std::placeholders::_1, std::placeholders::_2, regexPattern, mode,
+                               subscriptionName, conf, callback));
 }
 
 void ClientImpl::createPatternMultiTopicsConsumer(const Result result, const NamespaceTopicsPtr topics,
                                                   const std::string& regexPattern,
+                                                  CommandGetTopicsOfNamespace_Mode mode,
                                                   const std::string& subscriptionName,
                                                   const ConsumerConfiguration& conf,
                                                   SubscribeCallback callback) {
     if (result == ResultOk) {
         ConsumerImplBasePtr consumer;
 
-        PULSAR_REGEX_NAMESPACE::regex pattern(regexPattern);
+        PULSAR_REGEX_NAMESPACE::regex pattern(TopicName::removeDomain(regexPattern));
 
         NamespaceTopicsPtr matchTopics =
             PatternMultiTopicsConsumerImpl::topicsPatternFilter(*topics, pattern);
 
         auto interceptors = std::make_shared<ConsumerInterceptors>(conf.getInterceptors());
 
-        consumer = std::make_shared<PatternMultiTopicsConsumerImpl>(shared_from_this(), regexPattern,
+        consumer = std::make_shared<PatternMultiTopicsConsumerImpl>(shared_from_this(), regexPattern, mode,
                                                                     *matchTopics, subscriptionName, conf,
                                                                     lookupServicePtr_, interceptors);
 
