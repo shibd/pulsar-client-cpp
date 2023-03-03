@@ -27,16 +27,15 @@ DECLARE_LOG_OBJECT()
 
 using namespace pulsar;
 
-PatternMultiTopicsConsumerImpl::PatternMultiTopicsConsumerImpl(ClientImplPtr client,
-                                                               const std::string pattern,
-                                                               const std::vector<std::string>& topics,
-                                                               const std::string& subscriptionName,
-                                                               const ConsumerConfiguration& conf,
-                                                               const LookupServicePtr lookupServicePtr_)
+PatternMultiTopicsConsumerImpl::PatternMultiTopicsConsumerImpl(
+    ClientImplPtr client, const std::string pattern, CommandGetTopicsOfNamespace_Mode getTopicsMode,
+    const std::vector<std::string>& topics, const std::string& subscriptionName,
+    const ConsumerConfiguration& conf, const LookupServicePtr lookupServicePtr_)
     : MultiTopicsConsumerImpl(client, topics, subscriptionName, TopicName::get(pattern), conf,
                               lookupServicePtr_),
       patternString_(pattern),
-      pattern_(PULSAR_REGEX_NAMESPACE::regex(pattern)),
+      pattern_(PULSAR_REGEX_NAMESPACE::regex(TopicName::removeDomain(pattern))),
+      getTopicsMode_(getTopicsMode),
       autoDiscoveryTimer_(client->getIOExecutorProvider()->get()->createDeadlineTimer()),
       autoDiscoveryRunning_(false) {
     namespaceName_ = TopicName::get(pattern)->getNamespaceName();
@@ -77,7 +76,7 @@ void PatternMultiTopicsConsumerImpl::autoDiscoveryTimerTask(const boost::system:
     // already get namespace from pattern.
     assert(namespaceName_);
 
-    lookupServicePtr_->getTopicsOfNamespaceAsync(namespaceName_)
+    lookupServicePtr_->getTopicsOfNamespaceAsync(namespaceName_, getTopicsMode_)
         .addListener(std::bind(&PatternMultiTopicsConsumerImpl::timerGetTopicsOfNamespace, this,
                                std::placeholders::_1, std::placeholders::_2));
 }
@@ -195,10 +194,10 @@ void PatternMultiTopicsConsumerImpl::onTopicsRemoved(NamespaceTopicsPtr removedT
 NamespaceTopicsPtr PatternMultiTopicsConsumerImpl::topicsPatternFilter(
     const std::vector<std::string>& topics, const PULSAR_REGEX_NAMESPACE::regex& pattern) {
     NamespaceTopicsPtr topicsResultPtr = std::make_shared<std::vector<std::string>>();
-
-    for (std::vector<std::string>::const_iterator itr = topics.begin(); itr != topics.end(); itr++) {
-        if (PULSAR_REGEX_NAMESPACE::regex_match(*itr, pattern)) {
-            topicsResultPtr->push_back(*itr);
+    for (const auto& it : topics) {
+        auto topic = TopicName::removeDomain(it);
+        if (PULSAR_REGEX_NAMESPACE::regex_match(topic, pattern)) {
+            topicsResultPtr->push_back(std::move(it));
         }
     }
     return topicsResultPtr;
