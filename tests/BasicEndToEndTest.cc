@@ -4125,7 +4125,6 @@ void testBatchReceive(bool multiConsumer) {
     Producer producer;
 
     Promise<Result, Producer> producerPromise;
-    client.createProducerAsync(topicName, WaitForCallbackValue<Producer>(producerPromise));
     Future<Result, Producer> producerFuture = producerPromise.getFuture();
     Result result = producerFuture.get(producer);
     ASSERT_EQ(ResultOk, result);
@@ -4133,8 +4132,9 @@ void testBatchReceive(bool multiConsumer) {
     Consumer consumer;
     ConsumerConfiguration consumerConfig;
     // when receiver queue size > maxNumMessages, use receiver queue size.
+    const int batchReceiveMaxNumMessages = 10;
     consumerConfig.setBatchReceivePolicy(BatchReceivePolicy(1000, -1, -1));
-    consumerConfig.setReceiverQueueSize(10);
+    consumerConfig.setReceiverQueueSize(batchReceiveMaxNumMessages);
     consumerConfig.setProperty("consumer-name", "test-consumer-name");
     consumerConfig.setProperty("consumer-id", "test-consumer-id");
     Promise<Result, Consumer> consumerPromise;
@@ -4146,32 +4146,37 @@ void testBatchReceive(bool multiConsumer) {
 
     // sync batch receive test
     std::string prefix = "batch-receive-msg";
-    int numOfMessages = 10;
+    int numOfMessages = 100;
     for (int i = 0; i < numOfMessages; i++) {
         std::string messageContent = prefix + std::to_string(i);
         Message msg = MessageBuilder().setContent(messageContent).build();
         producer.send(msg);
     }
 
-    Messages messages;
-    Result receive = consumer.batchReceive(messages);
-    ASSERT_EQ(receive, ResultOk);
-    ASSERT_EQ(messages.size(), numOfMessages);
+    for (int i = 0; i < numOfMessages / batchReceiveMaxNumMessages; i++) {
+        Messages messages;
+        Result receive = consumer.batchReceive(messages);
+        ASSERT_EQ(receive, ResultOk);
+        ASSERT_EQ(messages.size(), batchReceiveMaxNumMessages);
+    }
 
     // async batch receive test
-    Latch latch(1);
-    BatchReceiveCallback batchReceiveCallback = [&latch, numOfMessages](Result result, Messages messages) {
-        ASSERT_EQ(result, ResultOk);
-        ASSERT_EQ(messages.size(), numOfMessages);
-        latch.countdown();
-    };
-    consumer.batchReceiveAsync(batchReceiveCallback);
     for (int i = 0; i < numOfMessages; i++) {
         std::string messageContent = prefix + std::to_string(i);
         Message msg = MessageBuilder().setContent(messageContent).build();
         producer.send(msg);
     }
-    ASSERT_TRUE(latch.wait(std::chrono::seconds(10)));
+    for (int i = 0; i < numOfMessages / batchReceiveMaxNumMessages; i++) {
+        Latch latch(1);
+        BatchReceiveCallback batchReceiveCallback = [&latch, &batchReceiveMaxNumMessages](Result result,
+                                                                                          Messages messages) {
+            ASSERT_EQ(result, ResultOk);
+            ASSERT_EQ(messages.size(), batchReceiveMaxNumMessages);
+            latch.countdown();
+        };
+        consumer.batchReceiveAsync(batchReceiveCallback);
+        ASSERT_TRUE(latch.wait(std::chrono::seconds(10)));
+    }
 
     producer.close();
     consumer.close();
