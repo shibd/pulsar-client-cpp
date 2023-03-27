@@ -339,20 +339,28 @@ void ClientImpl::subscribeWithRegexAsync(const std::string& regexPattern, const 
         }
     }
 
+    if (TopicName::containsDomain(regexPattern)) {
+        LOG_WARN("Ignore invalid domain: "
+                 << topicNamePtr->getDomain()
+                 << ", use the RegexSubscriptionMode parameter to set the topic type");
+    }
+
     CommandGetTopicsOfNamespace_Mode mode;
-    if (!TopicName::containsDomain(regexPattern)) {
-        mode = CommandGetTopicsOfNamespace_Mode_ALL;
-    } else {
-        auto domain = topicNamePtr->getDomain();
-        if (domain == TopicDomain::Persistent) {
+    auto regexSubscriptionMode = conf.getRegexSubscriptionMode();
+    switch (regexSubscriptionMode) {
+        case PersistentOnly:
             mode = CommandGetTopicsOfNamespace_Mode_PERSISTENT;
-        } else if (domain == TopicDomain::NonPersistent) {
+            break;
+        case NonPersistentOnly:
             mode = CommandGetTopicsOfNamespace_Mode_NON_PERSISTENT;
-        } else {
+            break;
+        case AllTopics:
+            mode = CommandGetTopicsOfNamespace_Mode_ALL;
+            break;
+        default:
             LOG_ERROR("Topic pattern not valid: " << regexPattern);
             callback(ResultInvalidTopicName, Consumer());
             return;
-        }
     }
 
     lookupServicePtr_->getTopicsOfNamespaceAsync(topicNamePtr->getNamespaceName(), mode)

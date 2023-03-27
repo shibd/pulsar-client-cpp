@@ -1053,6 +1053,7 @@ TEST(ConsumerTest, testPatternSubscribeTopic) {
         // 1. Use pattern to sub topic1, topic2, topic3
         ConsumerConfiguration consConfig;
         consConfig.setConsumerType(ConsumerShared);
+        consConfig.setRegexSubscriptionMode(RegexSubscriptionMode::AllTopics);
         Consumer consumer;
         std::string pattern = "public/default/" + topicName + ".*";
         ASSERT_EQ(ResultOk, client.subscribeWithRegex(pattern, "sub-all", consConfig, consumer));
@@ -1088,8 +1089,9 @@ TEST(ConsumerTest, testPatternSubscribeTopic) {
     {
         ConsumerConfiguration consConfig;
         consConfig.setConsumerType(ConsumerShared);
+        consConfig.setRegexSubscriptionMode(RegexSubscriptionMode::PersistentOnly);
         Consumer consumer;
-        std::string pattern = "persistent://public/default/" + topicName + ".*";
+        std::string pattern = "public/default/" + topicName + ".*";
         ASSERT_EQ(ResultOk, client.subscribeWithRegex(pattern, "sub-persistent", consConfig, consumer));
         auto multiConsumerImplPtr = PulsarFriend::getMultiTopicsConsumerImplPtr(consumer);
         ASSERT_EQ(multiConsumerImplPtr->consumers_.size(), 2);
@@ -1104,8 +1106,9 @@ TEST(ConsumerTest, testPatternSubscribeTopic) {
     {
         ConsumerConfiguration consConfig;
         consConfig.setConsumerType(ConsumerShared);
+        consConfig.setRegexSubscriptionMode(RegexSubscriptionMode::NonPersistentOnly);
         Consumer consumer;
-        std::string pattern = "non-persistent://public/default/" + topicName + ".*";
+        std::string pattern = "public/default/" + topicName + ".*";
         ASSERT_EQ(ResultOk, client.subscribeWithRegex(pattern, "sub-non-persistent", consConfig, consumer));
         auto multiConsumerImplPtr = PulsarFriend::getMultiTopicsConsumerImplPtr(consumer);
         ASSERT_EQ(multiConsumerImplPtr->consumers_.size(), 1);

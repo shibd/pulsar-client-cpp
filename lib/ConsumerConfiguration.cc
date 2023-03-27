@@ -310,4 +310,14 @@ const std::vector<ConsumerInterceptorPtr>& ConsumerConfiguration::getInterceptor
     return impl_->interceptors;
 }
 
+ConsumerConfiguration& ConsumerConfiguration::setRegexSubscriptionMode(
+    RegexSubscriptionMode regexSubscriptionMode) {
+    impl_->regexSubscriptionMode = regexSubscriptionMode;
+    return *this;
+}
+
+RegexSubscriptionMode ConsumerConfiguration::getRegexSubscriptionMode() const {
+    return impl_->regexSubscriptionMode;
+}
+
 }  // namespace pulsar
