@@ -120,6 +120,30 @@ class BlockingQueue {
         return true;
     }
 
+    // TODO add comment
+    bool popIfPredicate(T& value, std::function<bool(const T& value)> peekPredicate) {
+        Lock lock(mutex_);
+        if (queue_.empty()) {
+            return false;
+        }
+
+        bool wasFull = isFullNoMutex();
+
+        auto peekValue = queue_.front();
+        if (peekPredicate(peekValue)) {
+            value = peekValue;
+            queue_.pop_front();
+            lock.unlock();
+            if (wasFull) {
+                // Notify that an element is popped
+                queueFullCondition.notify_all();
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     // Check the 1st element of the queue
     bool peek(T& value) {
         Lock lock(mutex_);

@@ -87,6 +87,23 @@ class UnboundedBlockingQueue {
         return true;
     }
 
+    // TODO add comment
+    bool popIfPredicate(T& value, std::function<bool(const T& value)> peekPredicate) {
+        Lock lock(mutex_);
+        if (queue_.empty()) {
+            return false;
+        }
+
+        auto peekValue = queue_.front();
+        if (peekPredicate(peekValue)) {
+            value = peekValue;
+            queue_.pop_front();
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     // Check the 1st element of the queue
     bool peek(T& value) {
         Lock lock(mutex_);
