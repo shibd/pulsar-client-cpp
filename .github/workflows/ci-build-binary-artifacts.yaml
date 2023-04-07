@@ -187,6 +187,7 @@ jobs:
         shell: bash
         run: 7z a -tzip pulsar-client-cpp-${{ matrix.triplet }}-Debug.zip ${{ env.INSTALL_DIR }}-Debug/*
 
+
       - name: Upload artifacts (Debug)
         uses: actions/upload-artifact@v3
         with:
