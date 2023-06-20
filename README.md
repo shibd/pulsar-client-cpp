@@ -19,7 +19,7 @@
 
 -->
 
-# Pulsar C++ client library
+# P ulsar C++ client library
 
 Pulsar C++ clients support a variety of Pulsar features to enable building applications connecting to your Pulsar cluster.
 
