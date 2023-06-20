@@ -49,8 +49,8 @@ jobs:
 
       - name: Install deps (macOS)
         if: ${{ startsWith(matrix.os, 'macos') }}
-        run:
-          echo "Install protobuf v21.12"
+        run: |
+          # Install protobuf v21.12
           wget https://raw.githubusercontent.com/Homebrew/homebrew-core/2d47ed2eac09d59ffc2c92b1d804f1c232188c88/Formula/protobuf.rb
           brew install --formula ./protobuf.rb
           brew install pkg-config wireshark
@@ -271,7 +271,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-         echo "Install protobuf v21.12"
+         # Install protobuf v21.12
          wget https://raw.githubusercontent.com/Homebrew/homebrew-core/2d47ed2eac09d59ffc2c92b1d804f1c232188c88/Formula/protobuf.rb
          brew install --formula ./protobuf.rb
          brew install openssl boost zstd snappy googletest
