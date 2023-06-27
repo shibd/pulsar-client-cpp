@@ -19,6 +19,8 @@
 
 #include <pulsar/c/table_view.h>
 
+#include <cstring>
+
 #include "c_structs.h"
 
 char *str_malloc_and_copy(const char *s) {
