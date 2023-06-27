@@ -19,9 +19,8 @@
 
 #include <pulsar/c/table_view.h>
 
-#include <cstring>
-
 #include "c_structs.h"
+#include "cstring"
 
 char *str_malloc_and_copy(const char *s) {
     size_t slen = strlen(s);
