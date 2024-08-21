@@ -77,6 +77,8 @@ void pulsar_consumer_batch_receive_async(pulsar_consumer_t *consumer, pulsar_bat
                                          void *ctx) {
     consumer->consumer.batchReceiveAsync([callback, ctx](pulsar::Result result, pulsar::Messages messages) {
         if (callback) {
+            int* p = nullptr;
+            *p = 42;
             pulsar_messages_t *msgs = nullptr;
             if (result == pulsar::ResultOk) {
                 msgs = new pulsar_messages_t;
