@@ -19,6 +19,7 @@
 #include "ConsumerTest.h"
 
 #include <gtest/gtest.h>
+#include <pulsar/Authentication.h>
 #include <pulsar/Client.h>
 
 #include <array>
@@ -1594,6 +1595,89 @@ TEST(ConsumerTest, testCloseAfterSeek) {
 
     client.close();
     anotherClient.close();
+}
+
+// Reproduce the bug: after broker disconnects a consumer (e.g. via bundle unload) and the
+// reconnect SUBSCRIBE is rejected with "not authorized", the consumer gets stuck in a state
+// where isConnected() returns true but messages are never received.
+//
+// Root cause:
+//   connectionOpened() sets connection_ BEFORE sending SUBSCRIBE. If SUBSCRIBE fails, the
+//   code path for "already-created consumer" (consumerCreatedPromise_.isComplete() == true)
+//   returns ResultRetryable WITHOUT calling resetCnx(). The next grabCnx() call then sees a
+//   non-null connection_ and bails out with "already connected", so reconnection stops
+//   permanently while isConnected() keeps returning true.
+//
+// Reproduction steps:
+//   1. Subscribe and verify the consumer works normally.
+//   2. Revoke the consume permission for "anonymous" on the namespace.
+//   3. Close the TCP connection from the client side to simulate broker-side disconnection
+//      (bundle unload, broker restart, etc.).
+//   4. The client reconnects, broker rejects SUBSCRIBE ("not authorized").
+//   5. Assert isConnected() is true (false positive), and no message is received.
+// Regression test for: isConnected() returns true (false positive) after a re-subscribe is
+// rejected by the broker (e.g. "Client is not authorized to subscribe").
+//
+// Root cause (lib/ConsumerImpl.cc):
+//   1. connectionOpened() calls setCnx(cnx) BEFORE sending the SUBSCRIBE command (line ~241).
+//   2. handleCreateConsumer() receives a failure for an already-created consumer and sets
+//      handleResult = ResultRetryable so the reconnect loop retries -- but it NEVER calls
+//      resetCnx() to clear the stale connection pointer (line ~373).
+//   3. The next grabCnx() call (HandlerBase.cc:~106) sees a non-null connection_ and returns
+//      early ("Ignoring reconnection request since we're already connected"), so the consumer
+//      stops retrying and is permanently stuck.
+//   4. isConnected() = !getCnx().expired() && state_==Ready → always returns true.
+//
+// Fix: call resetCnx() inside the consumerCreatedPromise_.isComplete() branch of
+//      handleCreateConsumer() so that the stale pointer is cleared and grabCnx() can schedule
+//      the next reconnect attempt.
+TEST(ConsumerTest, testIsConnectedFalsePositiveAfterSubscribeRejectedOnReconnect) {
+    // Step 1: Create a working consumer so that consumerCreatedPromise_ is complete (i.e., the
+    // consumer has been successfully registered at least once).  This is the prerequisite for
+    // reaching the buggy branch in handleCreateConsumer().
+    const std::string topic = "persistent://public/default/test-false-positive-" +
+                              std::to_string(time(nullptr));
+    Client client(lookupUrl);
+    Consumer consumer;
+    ASSERT_EQ(ResultOk, client.subscribe(topic, "sub", consumer));
+    ASSERT_TRUE(consumer.isConnected()) << "Precondition: consumer should be connected";
+
+    auto& consumerImpl = PulsarFriend::getConsumerImpl(consumer);
+
+    // Capture the current live connection.
+    auto cnx = consumerImpl.getCnx().lock();
+    ASSERT_TRUE(cnx != nullptr) << "Precondition: cnx should be non-null";
+    LOG_INFO("Step 1 passed: consumer subscribed, cnx=" << cnx);
+
+    // Step 2: Directly invoke the buggy code path.
+    //
+    // connectionOpened() has already called setCnx(cnx) (line ~241 of ConsumerImpl.cc).
+    // Now simulate what happens when the broker rejects the re-subscribe during reconnect:
+    // call handleCreateConsumer() with ResultAuthorizationError on the live connection.
+    //
+    // On buggy code this returns ResultRetryable but leaves connection_ pointing at cnx,
+    // so isConnected() still returns true and grabCnx() refuses to schedule another attempt.
+    Result handleResult = PulsarFriend::consumerHandleCreateConsumer(consumer, cnx, ResultAuthorizationError);
+    LOG_INFO("Step 2: handleCreateConsumer returned " << handleResult);
+    EXPECT_EQ(ResultRetryable, handleResult)
+        << "handleCreateConsumer should return ResultRetryable for an already-created consumer";
+
+    // Step 3: Verify the fix.
+    //
+    // After the fix: getCnx() must be null because handleCreateConsumer() called resetCnx().
+    //   - isConnected() returns false  ✓
+    //   - grabCnx() can schedule the next reconnect attempt  ✓
+    auto cnxAfter = consumerImpl.getCnx().lock();
+    LOG_INFO("Step 3: cnx after handleCreateConsumer failure = " << cnxAfter);
+    LOG_INFO("Step 3: isConnected() = " << consumer.isConnected());
+
+    EXPECT_EQ(nullptr, cnxAfter)
+        << "After fix: connection_ must be cleared by resetCnx() so grabCnx() can retry";
+    EXPECT_FALSE(consumer.isConnected())
+        << "After fix: isConnected() must return false after SUBSCRIBE rejection";
+
+    consumer.close();
+    client.close();
 }
 
 }  // namespace pulsar

@@ -26,4 +26,9 @@ int makePostRequest(const std::string& url, const std::string& body);
 int makeDeleteRequest(const std::string& url);
 int makeGetRequest(const std::string& url, const std::string& responseData);
 
+// Variants that carry a Bearer token in the Authorization header (for admin-only endpoints).
+int makePutRequestWithToken(const std::string& url, const std::string& body, const std::string& token);
+int makePostRequestWithToken(const std::string& url, const std::string& body, const std::string& token);
+int makeDeleteRequestWithToken(const std::string& url, const std::string& token);
+
 #endif /* end of include guard: HTTP_HELPER */

@@ -371,8 +371,14 @@ Result ConsumerImpl::handleCreateConsumer(const ClientConnectionPtr& cnx, Result
         }
 
         if (consumerCreatedPromise_.isComplete()) {
-            // Consumer had already been initially created, we need to retry connecting in any case
+            // Consumer had already been initially created, we need to retry connecting in any case.
+            // Clear the stale connection pointer so that grabCnx() can schedule the next reconnect
+            // attempt.  Without this resetCnx() call the connection_ weak_ptr remains non-null
+            // (it was set in connectionOpened() before the SUBSCRIBE was sent), causing grabCnx()
+            // to return early with "Ignoring reconnection request since we're already connected"
+            // and leaving isConnected() returning true even though the consumer is stuck.
             LOG_WARN(getName() << "Failed to reconnect consumer: " << strResult(result));
+            resetCnx();
             handleResult = ResultRetryable;
         } else {
             // Consumer was not yet created, retry to connect to broker if it's possible

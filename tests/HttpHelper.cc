@@ -70,3 +70,47 @@ int makeDeleteRequest(const std::string& url) { return makeRequest("DELETE", url
 int makeGetRequest(const std::string& url, const std::string& responseData) {
     return makeRequest("GET", url, "", responseData);
 }
+
+static int makeRequestWithToken(const std::string& method, const std::string& url,
+                                const std::string& body, const std::string& token) {
+    CURL* curl = curl_easy_init();
+
+    struct curl_slist* list = NULL;
+    list = curl_slist_append(list, "Content-Type: application/json");
+    std::string authHeader = "Authorization: Bearer " + token;
+    list = curl_slist_append(list, authHeader.c_str());
+
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.c_str());
+    if (!body.empty()) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    }
+
+    int res = curl_easy_perform(curl);
+    curl_slist_free_all(list);
+
+    if (res != CURLE_OK) {
+        curl_easy_cleanup(curl);
+        return -1;
+    }
+
+    long httpResult = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpResult);
+    curl_easy_cleanup(curl);
+    return (int)httpResult;
+}
+
+int makePutRequestWithToken(const std::string& url, const std::string& body,
+                            const std::string& token) {
+    return makeRequestWithToken("PUT", url, body, token);
+}
+
+int makePostRequestWithToken(const std::string& url, const std::string& body,
+                             const std::string& token) {
+    return makeRequestWithToken("POST", url, body, token);
+}
+
+int makeDeleteRequestWithToken(const std::string& url, const std::string& token) {
+    return makeRequestWithToken("DELETE", url, "", token);
+}
